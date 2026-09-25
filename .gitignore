@@ -13,3 +13,8 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Firebase Rules test dependencies and emulator diagnostics
+node_modules/
+database-debug.log
+firebase-debug.log

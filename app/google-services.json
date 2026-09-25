@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "719144763397",
+    "firebase_url": "https://comapp-av-default-rtdb.europe-west1.firebasedatabase.app",
+    "project_id": "comapp-av",
+    "storage_bucket": "comapp-av.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:719144763397:android:05f1f90b7dfd564c235c6c",
+        "android_client_info": {
+          "package_name": "com.ferhat.comappav"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC9Z5k7qIAYXDezPLZ10zPvm0DebPb6kfw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

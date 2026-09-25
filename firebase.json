@@ -1,0 +1,16 @@
+{
+  "database": [
+    {
+      "instance": "comapp-av-default-rtdb",
+      "rules": "database.rules.json"
+    }
+  ],
+  "emulators": {
+    "database": {
+      "port": 9000
+    },
+    "ui": {
+      "enabled": false
+    }
+  }
+}

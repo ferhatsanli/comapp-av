@@ -1,0 +1,23 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "commands": {
+      ".indexOn": ["targetUid"],
+      ".read": "auth != null && auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1' && query.orderByChild === 'targetUid' && query.equalTo === 'N8V4nrLrELa83EXRLWJsiis85Bq1'",
+      "$commandId": {
+        ".read": "auth != null && ((auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1' && data.child('targetUid').val() === 'N8V4nrLrELa83EXRLWJsiis85Bq1') || data.child('senderUid').val() === auth.uid)",
+        ".write": "auth != null && ((auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462' && !data.exists() && newData.exists() && newData.child('action').val() === 'PING' && newData.child('senderUid').val() === auth.uid && newData.child('targetUid').val() === 'N8V4nrLrELa83EXRLWJsiis85Bq1' && newData.child('status').val() === 'PENDING') || (auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1' && data.exists() && newData.exists() && data.child('action').val() === newData.child('action').val() && data.child('senderUid').val() === newData.child('senderUid').val() && data.child('targetUid').val() === newData.child('targetUid').val() && ((data.child('status').val() === 'PENDING' && newData.child('status').val() === 'PROCESSING') || (data.child('status').val() === 'PROCESSING' && data.child('processingAt').val() < now - 120000 && newData.child('status').val() === 'PROCESSING') || (data.child('status').val() === 'PROCESSING' && newData.child('status').val() === 'SUCCESS' && newData.child('result').val() === 'PONG') || (data.child('status').val() === 'PROCESSING' && newData.child('status').val() === 'FAILED' && newData.child('errorCode').val() === 'AGENT_ERROR'))))",
+        ".validate": "newData.hasChildren(['action', 'senderUid', 'targetUid', 'status']) && newData.child('action').val() === 'PING' && newData.child('senderUid').val() === '57HVnDSvZKNbJBabrDF4c2gnv462' && newData.child('targetUid').val() === 'N8V4nrLrELa83EXRLWJsiis85Bq1' && ((newData.child('status').val() === 'PENDING' && !newData.child('processingAt').exists() && !newData.child('result').exists() && !newData.child('errorCode').exists()) || (newData.child('status').val() === 'PROCESSING' && newData.child('processingAt').isNumber() && newData.child('processingAt').val() >= now - 30000 && !newData.child('result').exists() && !newData.child('errorCode').exists()) || (newData.child('status').val() === 'SUCCESS' && !newData.child('processingAt').exists() && newData.child('result').val() === 'PONG' && !newData.child('errorCode').exists()) || (newData.child('status').val() === 'FAILED' && !newData.child('processingAt').exists() && newData.child('errorCode').val() === 'AGENT_ERROR' && !newData.child('result').exists()))",
+        "action": { ".validate": "newData.isString() && newData.val() === 'PING'" },
+        "senderUid": { ".validate": "newData.isString() && newData.val() === '57HVnDSvZKNbJBabrDF4c2gnv462'" },
+        "targetUid": { ".validate": "newData.isString() && newData.val() === 'N8V4nrLrELa83EXRLWJsiis85Bq1'" },
+        "status": { ".validate": "newData.isString() && (newData.val() === 'PENDING' || newData.val() === 'PROCESSING' || newData.val() === 'SUCCESS' || newData.val() === 'FAILED')" },
+        "processingAt": { ".validate": "newData.isNumber() && newData.val() >= now - 30000" },
+        "result": { ".validate": "newData.isString() && newData.val() === 'PONG'" },
+        "errorCode": { ".validate": "newData.isString() && newData.val() === 'AGENT_ERROR'" },
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}
