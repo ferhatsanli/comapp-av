@@ -69,3 +69,17 @@ npm run test:firebase-rules
 ```
 
 Expected test output is one passing summary covering denied unauthenticated reads/writes, Android ownership and PENDING-only creation, Pi filtering and transitions, immutable fields, unexpected fields, and deletion.
+
+
+## SPEAK command
+
+`SPEAK` asks the agent to read a text aloud on the machine it runs on (the laptop).
+
+| Field | Rule |
+| --- | --- |
+| `action` | `SPEAK` |
+| `text` | string, 1 to 300 characters; required for `SPEAK`, forbidden for `PING`; immutable once created |
+| `result` | `SPOKEN` when the status is `SUCCESS` (`PONG` stays reserved for `PING`) |
+| `errorCode` | `AGENT_ERROR` when the status is `FAILED`, for example when no audio device works |
+
+The status transitions are the same as for `PING`. Speech has a side effect, so after an agent crash a stale `PROCESSING` claim can be read aloud a second time. The Rules still accept no other fields, so a command cannot carry a voice, a program name or shell text; the agent decides how to speak.

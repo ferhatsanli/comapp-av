@@ -161,7 +161,38 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var error by remember { mutableStateOf<String?>(null) }
     var errorCode by remember { mutableStateOf<String?>(null) }
     var sending by remember { mutableStateOf(false) }
+    var commandAction by remember { mutableStateOf(PingProtocol.ACTION) }
+    var speakText by rememberSaveable { mutableStateOf("") }
     val authorized = user.uid == PingProtocol.ANDROID_UID
+    val canSend = authorized &&
+        connected == true &&
+        !sending &&
+        commandStatus !in setOf("PENDING", "PROCESSING")
+
+    fun sendCommand(action: String, payload: Map<String, String>) {
+        val newCommand = database.getReference("commands").push()
+        val id = newCommand.key
+        if (id == null) {
+            error = "Could not allocate a command ID."
+        } else {
+            commandStatus = null
+            errorCode = null
+            error = null
+            sending = true
+            newCommand.setValue(payload)
+                .addOnSuccessListener {
+                    sending = false
+                    commandAction = action
+                    commandId = id
+                    commandStatus = "PENDING"
+                }
+                .addOnFailureListener { exception ->
+                    sending = false
+                    error = exception.localizedMessage
+                        ?: "Could not send $action. Check the connection and Rules."
+                }
+        }
+    }
 
     DisposableEffect(database) {
         val connectionRef = database.getReference(".info/connected")
@@ -232,39 +263,33 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     )
                 }
             }
-            Text("Send a PING to rpi. The Raspberry Pi agent replies with PONG.")
+            Text("Send a PING to the agent. It replies with PONG.")
             Button(
-                onClick = {
-                    val newCommand = database.getReference("commands").push()
-                    val id = newCommand.key
-                    if (id == null) {
-                        error = "Could not allocate a command ID."
-                    } else {
-                        commandStatus = null
-                        errorCode = null
-                        error = null
-                        sending = true
-                        newCommand.setValue(PingProtocol.pendingCommand(user.uid))
-                            .addOnSuccessListener {
-                                sending = false
-                                commandId = id
-                                commandStatus = "PENDING"
-                            }
-                            .addOnFailureListener { exception ->
-                                sending = false
-                                error = exception.localizedMessage
-                                    ?: "Could not send PING. Check the connection and Rules."
-                            }
-                    }
-                },
-                enabled = authorized &&
-                    connected == true &&
-                    !sending &&
-                    commandStatus !in setOf("PENDING", "PROCESSING"),
+                onClick = { sendCommand(PingProtocol.ACTION, PingProtocol.pendingCommand(user.uid)) },
+                enabled = canSend,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                if (sending) CircularProgressIndicator()
-                else Text("PING rpi")
+                if (sending && commandAction == PingProtocol.ACTION) CircularProgressIndicator()
+                else Text("PING")
+            }
+            OutlinedTextField(
+                value = speakText,
+                onValueChange = { if (it.length <= PingProtocol.MAX_SPEAK_LENGTH) speakText = it },
+                label = { Text("Text to speak on the laptop") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text("${speakText.length}/${PingProtocol.MAX_SPEAK_LENGTH}")
+            Button(
+                onClick = {
+                    sendCommand(
+                        PingProtocol.SPEAK_ACTION,
+                        PingProtocol.speakCommand(user.uid, speakText.trim()),
+                    )
+                },
+                enabled = canSend && speakText.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("SPEAK")
             }
             if (!authorized) {
                 Text(
@@ -281,14 +306,18 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                         if (commandStatus == "FAILED" && errorCode != null) {
                             Text("Error: $errorCode", color = MaterialTheme.colorScheme.error)
                         }
+                        Text("Action: $commandAction")
                         if (commandStatus == "PENDING") {
-                            Text("Waiting for the Pi agent.")
+                            Text("Waiting for the agent.")
                         }
                         if (commandStatus == "PROCESSING") {
-                            Text("The Pi agent is processing this PING.")
+                            Text("The agent is processing this $commandAction.")
                         }
                         if (commandStatus == "SUCCESS") {
-                            Text("PONG received from the Pi agent.")
+                            Text(
+                                if (commandAction == PingProtocol.SPEAK_ACTION) "The agent spoke your text."
+                                else "PONG received from the agent."
+                            )
                         }
                     }
                 }
