@@ -144,6 +144,52 @@ try {
     await assertFails(set(command(androidDb, "android-owned"), null));
     await assertFails(update(command(androidDb, "android-owned"), { status: "FAILED", errorCode: "AGENT_ERROR" }));
   });
+  await check("SPEAK carries 1-300 characters of text and completes with SPOKEN", async () => {
+    const speak = (text, extra = {}) => ({
+      action: "SPEAK", senderUid: ANDROID, targetUid: PI, status: "PENDING", text, ...extra,
+    });
+    await assertSucceeds(set(command(androidDb, "speak-ok"), speak("Merhaba Ferhat")));
+    await assertSucceeds(set(command(androidDb, "speak-max"), speak("a".repeat(300))));
+    await assertFails(set(command(androidDb, "speak-empty"), speak("")));
+    await assertFails(set(command(androidDb, "speak-long"), speak("a".repeat(301))));
+    await assertFails(set(command(androidDb, "speak-notext"), {
+      action: "SPEAK", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+    }));
+    await assertFails(set(command(androidDb, "speak-number"), speak(42)));
+    await assertFails(set(command(androidDb, "ping-with-text"), {
+      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING", text: "hello",
+    }));
+    await assertFails(set(command(androidDb, "speak-extra"), speak("hi", { voice: "tr" })));
+    await assertFails(set(command(androidDb, "speak-success"), speak("hi", { status: "SUCCESS", result: "SPOKEN" })));
+
+    await assertSucceeds(update(command(piDb, "speak-ok"), {
+      status: "PROCESSING", processingAt: Date.now(),
+    }));
+    await assertFails(update(command(piDb, "speak-ok"), { text: "changed" }));
+    await assertFails(update(command(piDb, "speak-ok"), { status: "SUCCESS", result: "PONG", processingAt: null }));
+    await assertSucceeds(update(command(piDb, "speak-ok"), {
+      status: "SUCCESS", result: "SPOKEN", processingAt: null,
+    }));
+    const done = await assertSucceeds(get(command(androidDb, "speak-ok")));
+    assert.equal(done.val().text, "Merhaba Ferhat");
+    assert.equal(done.val().result, "SPOKEN");
+
+    await assertSucceeds(update(command(piDb, "speak-max"), {
+      status: "PROCESSING", processingAt: Date.now(),
+    }));
+    await assertSucceeds(update(command(piDb, "speak-max"), {
+      status: "FAILED", errorCode: "AGENT_ERROR", processingAt: null,
+    }));
+
+    // PING must still finish with PONG only.
+    await assertSucceeds(set(command(androidDb, "ping-again"), {
+      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+    }));
+    await assertSucceeds(update(command(piDb, "ping-again"), {
+      status: "PROCESSING", processingAt: Date.now(),
+    }));
+    await assertFails(update(command(piDb, "ping-again"), { status: "SUCCESS", result: "SPOKEN", processingAt: null }));
+  });
 } finally {
   await testEnv.cleanup();
 }
