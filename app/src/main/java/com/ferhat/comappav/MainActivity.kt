@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -45,6 +46,8 @@ import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
 import com.ferhat.comappav.ui.theme.ComAppAVTheme
+
+private data class SleepRequest(val minutes: Int?)
 
 private const val DATABASE_URL =
     "https://comapp-av-default-rtdb.europe-west1.firebasedatabase.app"
@@ -165,7 +168,11 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var sending by remember { mutableStateOf(false) }
     var commandAction by remember { mutableStateOf(PingProtocol.ACTION) }
     var speakText by rememberSaveable { mutableStateOf("") }
-    var confirmSleep by remember { mutableStateOf(false) }
+    var sleepRequest by remember { mutableStateOf<SleepRequest?>(null) }
+    var sleepHours by rememberSaveable { mutableStateOf("0") }
+    var sleepMinutes by rememberSaveable { mutableStateOf("30") }
+    val sleepTotal = (sleepHours.toIntOrNull() ?: 0) * 60 + (sleepMinutes.toIntOrNull() ?: 0)
+    val sleepTotalValid = sleepTotal in 1..PingProtocol.MAX_SLEEP_MINUTES
     val authorized = user.uid == PingProtocol.ANDROID_UID
     val canSend = authorized &&
         connected == true &&
@@ -236,24 +243,29 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
     }
 
-    if (confirmSleep) {
+    val request = sleepRequest
+    if (request != null) {
         AlertDialog(
-            onDismissRequest = { confirmSleep = false },
+            onDismissRequest = { sleepRequest = null },
             title = { Text("Put the laptop to sleep?") },
             text = {
                 Text(
-                    "The laptop suspends in a few seconds and wakes up at " +
-                        "${PingProtocol.WAKE_TIME_LABEL}. Until then it cannot receive commands.",
+                    "The laptop suspends in a few seconds and wakes up " +
+                        (if (request.minutes == null) "in the morning" else "after ${PingProtocol.formatDuration(request.minutes)}") +
+                        ". Until then it cannot receive commands.",
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
-                    confirmSleep = false
-                    sendCommand(PingProtocol.SLEEP_ACTION, PingProtocol.sleepCommand(user.uid))
+                    sleepRequest = null
+                    sendCommand(
+                        PingProtocol.SLEEP_ACTION,
+                        PingProtocol.sleepCommand(user.uid, request.minutes),
+                    )
                 }) { Text("Sleep") }
             },
             dismissButton = {
-                TextButton(onClick = { confirmSleep = false }) { Text("Cancel") }
+                TextButton(onClick = { sleepRequest = null }) { Text("Cancel") }
             },
         )
     }
@@ -316,12 +328,61 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
             ) {
                 Text("SPEAK")
             }
-            OutlinedButton(
-                onClick = { confirmSleep = true },
-                enabled = canSend,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("SLEEP until ${PingProtocol.WAKE_TIME_LABEL}")
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Laptop sleep", style = MaterialTheme.typography.titleMedium)
+                    Button(
+                        onClick = { sleepRequest = SleepRequest(null) },
+                        enabled = canSend,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("SLEEP until morning")
+                    }
+                    Text("Or sleep for a set time")
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        listOf(2, 10, 30, 60, 120).forEach { minutes ->
+                            TextButton(onClick = {
+                                sleepHours = (minutes / 60).toString()
+                                sleepMinutes = (minutes % 60).toString()
+                            }) { Text(PingProtocol.formatDuration(minutes)) }
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedTextField(
+                            value = sleepHours,
+                            onValueChange = { value ->
+                                if (value.length <= 2 && value.all { it.isDigit() }) sleepHours = value
+                            },
+                            label = { Text("Hours") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            value = sleepMinutes,
+                            onValueChange = { value ->
+                                if (value.length <= 2 && value.all { it.isDigit() }) sleepMinutes = value
+                            },
+                            label = { Text("Minutes") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { sleepRequest = SleepRequest(sleepTotal) },
+                        enabled = canSend && sleepTotalValid,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            if (sleepTotalValid) "Sleep for ${PingProtocol.formatDuration(sleepTotal)}"
+                            else "Enter 1 minute to 24 hours",
+                        )
+                    }
+                }
             }
             if (!authorized) {
                 Text(
@@ -349,8 +410,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                             Text(
                                 when (commandAction) {
                                     PingProtocol.SPEAK_ACTION -> "The agent spoke your text."
-                                    PingProtocol.SLEEP_ACTION ->
-                                        "The laptop is going to sleep. It wakes up at ${PingProtocol.WAKE_TIME_LABEL}."
+                                    PingProtocol.SLEEP_ACTION -> "The laptop is going to sleep."
                                     else -> "PONG received from the agent."
                                 }
                             )

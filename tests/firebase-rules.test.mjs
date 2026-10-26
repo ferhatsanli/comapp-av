@@ -225,6 +225,36 @@ try {
     assert.equal(done.val().result, "SLEEPING");
     assert.equal(typeof done.val().createdAt, "number");
   });
+  await check("SLEEP accepts a whole number of minutes from 1 to 1440, only on SLEEP, and the Pi cannot change it", async () => {
+    const timed = (durationMinutes) => ({
+      action: "SLEEP", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+      createdAt: serverTimestamp(), durationMinutes,
+    });
+    for (const minutes of [1, 2, 80, 1440]) {
+      await assertSucceeds(set(command(androidDb, `sleep-${minutes}`), timed(minutes)));
+    }
+    for (const [id, value] of [
+      ["zero", 0], ["too-long", 1441], ["negative", -5], ["fraction", 1.5], ["string", "30"],
+    ]) {
+      await assertFails(set(command(androidDb, `sleep-bad-${id}`), timed(value)));
+    }
+    await assertFails(set(command(androidDb, "ping-with-duration"), {
+      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING", durationMinutes: 5,
+    }));
+    await assertFails(set(command(androidDb, "speak-with-duration"), {
+      action: "SPEAK", senderUid: ANDROID, targetUid: PI, status: "PENDING", text: "hi", durationMinutes: 5,
+    }));
+
+    await assertSucceeds(update(command(piDb, "sleep-80"), {
+      status: "PROCESSING", processingAt: Date.now(),
+    }));
+    await assertFails(update(command(piDb, "sleep-80"), { durationMinutes: 600 }));
+    await assertSucceeds(update(command(piDb, "sleep-80"), {
+      status: "SUCCESS", result: "SLEEPING", processingAt: null,
+    }));
+    const done = await assertSucceeds(get(command(androidDb, "sleep-80")));
+    assert.equal(done.val().durationMinutes, 80);
+  });
 } finally {
   await testEnv.cleanup();
 }

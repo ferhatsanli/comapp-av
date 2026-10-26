@@ -92,6 +92,9 @@ The status transitions are the same as for `PING`. Speech has a side effect, so 
 | --- | --- |
 | `action` | `SLEEP`; carries no `text` |
 | `createdAt` | number, required for `SLEEP` and forbidden for other actions; written as the server timestamp and, at creation, not older than 60 seconds; immutable afterwards |
+| `durationMinutes` | optional whole number, 1 to 1440, allowed on `SLEEP` only and immutable afterwards; without it the laptop sleeps until the daily morning wake-up, with it the agent sets a one-time wake alarm that many minutes ahead |
 | `result` | `SLEEPING` when the status is `SUCCESS` |
 
 The agent marks the command `SUCCESS` first and suspends a few seconds later, so the phone sees the answer before the laptop goes to sleep. Because the laptop cannot receive commands while asleep, a SLEEP that waits in the queue (laptop offline) must not fire hours later: the agent ignores any SLEEP older than 90 seconds, and a SLEEP whose claim was left over from an earlier attempt, and reports `FAILED` with `AGENT_ERROR`.
+
+The agent sets the wake alarm before it answers, and answers `FAILED` (suspending nothing) if the alarm cannot be set, so a timed sleep never starts without a way back besides the daily wake-up.
