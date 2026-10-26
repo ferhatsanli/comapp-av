@@ -21,15 +21,21 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -56,6 +62,10 @@ import com.ferhat.comappav.ui.glass.GlassScreen
 import com.ferhat.comappav.ui.glass.LocalGlassPalette
 import com.ferhat.comappav.ui.glass.glassTextFieldColors
 import com.ferhat.comappav.ui.theme.ComAppAVTheme
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 private data class SleepRequest(val minutes: Int?)
 
@@ -175,6 +185,7 @@ private fun SignInScreen(auth: FirebaseAuth) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: FirebaseDatabase) {
     var connected by remember { mutableStateOf<Boolean?>(null) }
@@ -190,11 +201,29 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var sleepMinutes by rememberSaveable { mutableStateOf("30") }
     val sleepTotal = (sleepHours.toIntOrNull() ?: 0) * 60 + (sleepMinutes.toIntOrNull() ?: 0)
     val sleepTotalValid = sleepTotal in 1..PingProtocol.MAX_SLEEP_MINUTES
+    var refreshing by remember { mutableStateOf(false) }
+    val pullState = rememberPullToRefreshState()
+    val scope = rememberCoroutineScope()
     val authorized = user.uid == PingProtocol.ANDROID_UID
     val canSend = authorized &&
         connected == true &&
         !sending &&
         commandStatus !in setOf("PENDING", "PROCESSING")
+
+    // Pull-to-refresh: drop and re-open the Realtime Database connection, then wait until
+    // it reports connected again (or give up after a few seconds).
+    fun refreshConnection() {
+        if (refreshing) return
+        scope.launch {
+            refreshing = true
+            error = null
+            database.goOffline()
+            database.goOnline()
+            delay(700)
+            withTimeoutOrNull(8_000) { snapshotFlow { connected }.first { it == true } }
+            refreshing = false
+        }
+    }
 
     fun sendCommand(action: String, payload: Map<String, Any>) {
         val newCommand = database.getReference("commands").push()
@@ -288,214 +317,231 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     }
 
     Scaffold(containerColor = Color.Transparent, contentColor = LocalGlassPalette.current.ink) { padding ->
-        Column(
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = { refreshConnection() },
+            state = pullState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+                .padding(padding),
+            indicator = {
+                PullToRefreshDefaults.Indicator(
+                    state = pullState,
+                    isRefreshing = refreshing,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                    containerColor = LocalGlassPalette.current.baseMid,
+                    color = GlassColors.Blue,
+                )
+            },
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        "ComApp AV",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        if (authorized) "Signed in as the Android test account"
-                        else "Signed in with an unrecognized account",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = LocalGlassPalette.current.inkMuted,
-                    )
-                }
-                GlassChip("Sign out", onClick = { auth.signOut() })
-            }
-
-            GlassCard(Modifier.fillMaxWidth(), accent = connectionColor(connected), cornerRadius = 22.dp) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier
-                            .size(10.dp)
-                            .background(connectionColor(connected), CircleShape),
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        text = when (connected) {
-                            true -> "Realtime Database: connected"
-                            false -> "Realtime Database: disconnected"
-                            null -> "Realtime Database: checking connection…"
-                        },
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium,
-                    )
-                }
-            }
-
-            GlassCommandCard(
-                title = "Ping",
-                tag = PingProtocol.ACTION,
-                description = "Check that the agent is alive. It answers with PONG.",
-                accent = GlassColors.Blue,
-            ) {
-                GlassButton(
-                    text = "Send PING",
-                    accent = GlassColors.Blue,
-                    enabled = canSend,
-                    loading = sending && commandAction == PingProtocol.ACTION,
-                    onClick = { sendCommand(PingProtocol.ACTION, PingProtocol.pendingCommand(user.uid)) },
-                )
-            }
-
-            GlassCommandCard(
-                title = "Speak",
-                tag = PingProtocol.SPEAK_ACTION,
-                description = "The laptop reads your text out loud.",
-                accent = GlassColors.Indigo,
-            ) {
-                OutlinedTextField(
-                    value = speakText,
-                    onValueChange = { if (it.length <= PingProtocol.MAX_SPEAK_LENGTH) speakText = it },
-                    label = { Text("Text to speak on the laptop") },
-                    shape = GlassFieldShape,
-                    colors = glassTextFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    "${speakText.length}/${PingProtocol.MAX_SPEAK_LENGTH}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = LocalGlassPalette.current.inkFaint,
-                )
-                GlassButton(
-                    text = "Send SPEAK",
-                    accent = GlassColors.Indigo,
-                    enabled = canSend && speakText.isNotBlank(),
-                    loading = sending && commandAction == PingProtocol.SPEAK_ACTION,
-                    onClick = {
-                        sendCommand(
-                            PingProtocol.SPEAK_ACTION,
-                            PingProtocol.speakCommand(user.uid, speakText.trim()),
-                        )
-                    },
-                )
-            }
-
-            GlassCommandCard(
-                title = "Sleep",
-                tag = PingProtocol.SLEEP_ACTION,
-                description = "Suspend the laptop. It wakes up by itself.",
-                accent = GlassColors.Violet,
-            ) {
-                GlassButton(
-                    text = "Sleep until morning",
-                    accent = GlassColors.Violet,
-                    enabled = canSend,
-                    onClick = { sleepRequest = SleepRequest(null) },
-                )
-                Text(
-                    "Or sleep for a set time",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = LocalGlassPalette.current.inkMuted,
-                )
                 Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    listOf(2, 10, 30, 60, 120).forEach { minutes ->
-                        GlassChip(
-                            text = PingProtocol.formatDuration(minutes),
-                            onClick = {
-                                sleepHours = (minutes / 60).toString()
-                                sleepMinutes = (minutes % 60).toString()
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "ComApp AV",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            if (authorized) "Signed in as the Android test account"
+                            else "Signed in with an unrecognized account",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LocalGlassPalette.current.inkMuted,
+                        )
+                    }
+                    GlassChip("Sign out", onClick = { auth.signOut() })
+                }
+
+                GlassCard(Modifier.fillMaxWidth(), accent = connectionColor(connected), cornerRadius = 22.dp) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            Modifier
+                                .size(10.dp)
+                                .background(connectionColor(connected), CircleShape),
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            text = when (connected) {
+                                true -> "Realtime Database: connected"
+                                false -> "Realtime Database: disconnected (pull down to retry)"
+                                null -> "Realtime Database: checking connection…"
                             },
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Medium,
                         )
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(
-                        value = sleepHours,
-                        onValueChange = { value ->
-                            if (value.length <= 2 && value.all { it.isDigit() }) sleepHours = value
-                        },
-                        label = { Text("Hours") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        shape = GlassFieldShape,
-                        colors = glassTextFieldColors(),
-                        modifier = Modifier.weight(1f),
-                    )
-                    OutlinedTextField(
-                        value = sleepMinutes,
-                        onValueChange = { value ->
-                            if (value.length <= 2 && value.all { it.isDigit() }) sleepMinutes = value
-                        },
-                        label = { Text("Minutes") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        shape = GlassFieldShape,
-                        colors = glassTextFieldColors(),
-                        modifier = Modifier.weight(1f),
+
+                GlassCommandCard(
+                    title = "Ping",
+                    tag = PingProtocol.ACTION,
+                    description = "Check that the agent is alive. It answers with PONG.",
+                    accent = GlassColors.Blue,
+                ) {
+                    GlassButton(
+                        text = "Send PING",
+                        accent = GlassColors.Blue,
+                        enabled = canSend,
+                        loading = sending && commandAction == PingProtocol.ACTION,
+                        onClick = { sendCommand(PingProtocol.ACTION, PingProtocol.pendingCommand(user.uid)) },
                     )
                 }
-                GlassButton(
-                    text = if (sleepTotalValid) "Sleep for ${PingProtocol.formatDuration(sleepTotal)}"
-                    else "Enter 1 minute to 24 hours",
+
+                GlassCommandCard(
+                    title = "Speak",
+                    tag = PingProtocol.SPEAK_ACTION,
+                    description = "The laptop reads your text out loud.",
+                    accent = GlassColors.Indigo,
+                ) {
+                    OutlinedTextField(
+                        value = speakText,
+                        onValueChange = { if (it.length <= PingProtocol.MAX_SPEAK_LENGTH) speakText = it },
+                        label = { Text("Text to speak on the laptop") },
+                        shape = GlassFieldShape,
+                        colors = glassTextFieldColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        "${speakText.length}/${PingProtocol.MAX_SPEAK_LENGTH}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = LocalGlassPalette.current.inkFaint,
+                    )
+                    GlassButton(
+                        text = "Send SPEAK",
+                        accent = GlassColors.Indigo,
+                        enabled = canSend && speakText.isNotBlank(),
+                        loading = sending && commandAction == PingProtocol.SPEAK_ACTION,
+                        onClick = {
+                            sendCommand(
+                                PingProtocol.SPEAK_ACTION,
+                                PingProtocol.speakCommand(user.uid, speakText.trim()),
+                            )
+                        },
+                    )
+                }
+
+                GlassCommandCard(
+                    title = "Sleep",
+                    tag = PingProtocol.SLEEP_ACTION,
+                    description = "Suspend the laptop. It wakes up by itself.",
                     accent = GlassColors.Violet,
-                    prominent = false,
-                    enabled = canSend && sleepTotalValid,
-                    onClick = { sleepRequest = SleepRequest(sleepTotal) },
-                )
-            }
-
-            if (!authorized) {
-                GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Red, cornerRadius = 22.dp) {
-                    Text(
-                        "This account is not authorized for this milestone. Sign out and use the configured Android test account.",
-                        color = MaterialTheme.colorScheme.error,
+                ) {
+                    GlassButton(
+                        text = "Sleep until morning",
+                        accent = GlassColors.Violet,
+                        enabled = canSend,
+                        onClick = { sleepRequest = SleepRequest(null) },
                     )
-                }
-            }
-
-            if (commandId != null) {
-                GlassCard(Modifier.fillMaxWidth(), accent = statusColor(commandStatus), cornerRadius = 22.dp) {
                     Text(
-                        "Latest command",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
+                        "Or sleep for a set time",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = LocalGlassPalette.current.inkMuted,
                     )
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("ID: $commandId", style = MaterialTheme.typography.bodySmall)
-                        Text("Action: $commandAction")
-                        Text("Status: ${commandStatus ?: if (sending) "SENDING" else "WAITING"}")
-                        if (commandStatus == "FAILED" && errorCode != null) {
-                            Text("Error: $errorCode", color = MaterialTheme.colorScheme.error)
-                        }
-                        if (commandStatus == "PENDING") {
-                            Text("Waiting for the agent.")
-                        }
-                        if (commandStatus == "PROCESSING") {
-                            Text("The agent is processing this $commandAction.")
-                        }
-                        if (commandStatus == "SUCCESS") {
-                            Text(
-                                when (commandAction) {
-                                    PingProtocol.SPEAK_ACTION -> "The agent spoke your text."
-                                    PingProtocol.SLEEP_ACTION -> "The laptop is going to sleep."
-                                    else -> "PONG received from the agent."
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        listOf(2, 10, 30, 60, 120).forEach { minutes ->
+                            GlassChip(
+                                text = PingProtocol.formatDuration(minutes),
+                                onClick = {
+                                    sleepHours = (minutes / 60).toString()
+                                    sleepMinutes = (minutes % 60).toString()
                                 },
                             )
                         }
                     }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedTextField(
+                            value = sleepHours,
+                            onValueChange = { value ->
+                                if (value.length <= 2 && value.all { it.isDigit() }) sleepHours = value
+                            },
+                            label = { Text("Hours") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            shape = GlassFieldShape,
+                            colors = glassTextFieldColors(),
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            value = sleepMinutes,
+                            onValueChange = { value ->
+                                if (value.length <= 2 && value.all { it.isDigit() }) sleepMinutes = value
+                            },
+                            label = { Text("Minutes") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            shape = GlassFieldShape,
+                            colors = glassTextFieldColors(),
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    GlassButton(
+                        text = if (sleepTotalValid) "Sleep for ${PingProtocol.formatDuration(sleepTotal)}"
+                        else "Enter 1 minute to 24 hours",
+                        accent = GlassColors.Violet,
+                        prominent = false,
+                        enabled = canSend && sleepTotalValid,
+                        onClick = { sleepRequest = SleepRequest(sleepTotal) },
+                    )
                 }
-            }
 
-            if (error != null) {
-                Text(error!!, color = MaterialTheme.colorScheme.error)
+                if (!authorized) {
+                    GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Red, cornerRadius = 22.dp) {
+                        Text(
+                            "This account is not authorized for this milestone. Sign out and use the configured Android test account.",
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+
+                if (commandId != null) {
+                    GlassCard(Modifier.fillMaxWidth(), accent = statusColor(commandStatus), cornerRadius = 22.dp) {
+                        Text(
+                            "Latest command",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("ID: $commandId", style = MaterialTheme.typography.bodySmall)
+                            Text("Action: $commandAction")
+                            Text("Status: ${commandStatus ?: if (sending) "SENDING" else "WAITING"}")
+                            if (commandStatus == "FAILED" && errorCode != null) {
+                                Text("Error: $errorCode", color = MaterialTheme.colorScheme.error)
+                            }
+                            if (commandStatus == "PENDING") {
+                                Text("Waiting for the agent.")
+                            }
+                            if (commandStatus == "PROCESSING") {
+                                Text("The agent is processing this $commandAction.")
+                            }
+                            if (commandStatus == "SUCCESS") {
+                                Text(
+                                    when (commandAction) {
+                                        PingProtocol.SPEAK_ACTION -> "The agent spoke your text."
+                                        PingProtocol.SLEEP_ACTION -> "The laptop is going to sleep."
+                                        else -> "PONG received from the agent."
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (error != null) {
+                    Text(error!!, color = MaterialTheme.colorScheme.error)
+                }
             }
         }
     }
