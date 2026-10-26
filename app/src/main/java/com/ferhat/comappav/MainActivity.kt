@@ -2,29 +2,29 @@ package com.ferhat.comappav
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -36,6 +36,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -45,6 +47,14 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
+import com.ferhat.comappav.ui.glass.GlassButton
+import com.ferhat.comappav.ui.glass.GlassCard
+import com.ferhat.comappav.ui.glass.GlassChip
+import com.ferhat.comappav.ui.glass.GlassColors
+import com.ferhat.comappav.ui.glass.GlassCommandCard
+import com.ferhat.comappav.ui.glass.GlassFieldShape
+import com.ferhat.comappav.ui.glass.GlassScreen
+import com.ferhat.comappav.ui.glass.glassTextFieldColors
 import com.ferhat.comappav.ui.theme.ComAppAVTheme
 
 private data class SleepRequest(val minutes: Int?)
@@ -55,12 +65,15 @@ private const val DATABASE_URL =
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         val auth = FirebaseAuth.getInstance()
         val database = FirebaseDatabase.getInstance(DATABASE_URL)
         setContent {
             ComAppAVTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
+                GlassScreen {
                     ComAppScreen(auth = auth, database = database)
                 }
             }
@@ -91,7 +104,7 @@ private fun SignInScreen(auth: FirebaseAuth) {
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    Scaffold { padding ->
+    Scaffold(containerColor = Color.Transparent, contentColor = Color.White) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -100,59 +113,66 @@ private fun SignInScreen(auth: FirebaseAuth) {
                 .padding(24.dp),
             verticalArrangement = Arrangement.Center,
         ) {
-            Text("ComApp AV", style = MaterialTheme.typography.headlineMedium)
-            Spacer(Modifier.height(8.dp))
-            Text("Sign in with your Firebase Email/Password account to send a PING.")
-            Spacer(Modifier.height(24.dp))
-            OutlinedTextField(
-                value = email,
-                onValueChange = { email = it; error = null },
-                label = { Text("Email") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                singleLine = true,
-                enabled = !isLoading,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it; error = null },
-                label = { Text("Password") },
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                singleLine = true,
-                enabled = !isLoading,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            if (error != null) {
-                Spacer(Modifier.height(12.dp))
-                Text(error!!, color = MaterialTheme.colorScheme.error)
-            }
-            Spacer(Modifier.height(20.dp))
-            Button(
-                onClick = {
-                    if (email.isBlank() || password.isEmpty()) {
-                        error = "Enter your email and password."
-                    } else {
-                        isLoading = true
-                        error = null
-                        auth.signInWithEmailAndPassword(email.trim(), password)
-                            .addOnCompleteListener { task ->
-                                isLoading = false
-                                if (task.isSuccessful) {
-                                    password = ""
-                                } else {
-                                    error = task.exception?.localizedMessage
-                                        ?: "Sign-in failed. Check the account and connection."
+            GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Cyan) {
+                Text(
+                    "ComApp AV",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    "Sign in with your Firebase Email/Password account to send commands.",
+                    color = Color.White.copy(alpha = 0.70f),
+                )
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it; error = null },
+                    label = { Text("Email") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    singleLine = true,
+                    enabled = !isLoading,
+                    shape = GlassFieldShape,
+                    colors = glassTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it; error = null },
+                    label = { Text("Password") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    singleLine = true,
+                    enabled = !isLoading,
+                    shape = GlassFieldShape,
+                    colors = glassTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (error != null) {
+                    Text(error!!, color = MaterialTheme.colorScheme.error)
+                }
+                GlassButton(
+                    text = "Sign in",
+                    accent = GlassColors.Cyan,
+                    loading = isLoading,
+                    enabled = !isLoading,
+                    onClick = {
+                        if (email.isBlank() || password.isEmpty()) {
+                            error = "Enter your email and password."
+                        } else {
+                            isLoading = true
+                            error = null
+                            auth.signInWithEmailAndPassword(email.trim(), password)
+                                .addOnCompleteListener { task ->
+                                    isLoading = false
+                                    if (task.isSuccessful) {
+                                        password = ""
+                                    } else {
+                                        error = task.exception?.localizedMessage
+                                            ?: "Sign-in failed. Check the account and connection."
+                                    }
                                 }
-                            }
-                    }
-                },
-                enabled = !isLoading,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                if (isLoading) CircularProgressIndicator()
-                else Text("Sign in")
+                        }
+                    },
+                )
             }
         }
     }
@@ -270,136 +290,194 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         )
     }
 
-    Scaffold { padding ->
+    Scaffold(containerColor = Color.Transparent, contentColor = Color.White) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("ComApp AV", style = MaterialTheme.typography.headlineMedium)
-                OutlinedButton(onClick = { auth.signOut() }) { Text("Sign out") }
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "ComApp AV",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        if (authorized) "Signed in as the Android test account"
+                        else "Signed in with an unrecognized account",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.70f),
+                    )
+                }
+                GlassChip("Sign out", onClick = { auth.signOut() })
             }
-            Text(if (authorized) "Signed in as the Android test account" else "Signed in with an unrecognized account")
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
+
+            GlassCard(Modifier.fillMaxWidth(), accent = connectionColor(connected), cornerRadius = 22.dp) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .size(10.dp)
+                            .background(connectionColor(connected), CircleShape),
+                    )
+                    Spacer(Modifier.width(12.dp))
                     Text(
                         text = when (connected) {
                             true -> "Realtime Database: connected"
                             false -> "Realtime Database: disconnected"
                             null -> "Realtime Database: checking connection…"
                         },
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium,
                     )
                 }
             }
-            Text("Send a PING to the agent. It replies with PONG.")
-            Button(
-                onClick = { sendCommand(PingProtocol.ACTION, PingProtocol.pendingCommand(user.uid)) },
-                enabled = canSend,
-                modifier = Modifier.fillMaxWidth(),
+
+            GlassCommandCard(
+                title = "Ping",
+                tag = PingProtocol.ACTION,
+                description = "Check that the agent is alive. It answers with PONG.",
+                accent = GlassColors.Cyan,
             ) {
-                if (sending && commandAction == PingProtocol.ACTION) CircularProgressIndicator()
-                else Text("PING")
-            }
-            OutlinedTextField(
-                value = speakText,
-                onValueChange = { if (it.length <= PingProtocol.MAX_SPEAK_LENGTH) speakText = it },
-                label = { Text("Text to speak on the laptop") },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Text("${speakText.length}/${PingProtocol.MAX_SPEAK_LENGTH}")
-            Button(
-                onClick = {
-                    sendCommand(
-                        PingProtocol.SPEAK_ACTION,
-                        PingProtocol.speakCommand(user.uid, speakText.trim()),
-                    )
-                },
-                enabled = canSend && speakText.isNotBlank(),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("SPEAK")
-            }
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Laptop sleep", style = MaterialTheme.typography.titleMedium)
-                    Button(
-                        onClick = { sleepRequest = SleepRequest(null) },
-                        enabled = canSend,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("SLEEP until morning")
-                    }
-                    Text("Or sleep for a set time")
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        listOf(2, 10, 30, 60, 120).forEach { minutes ->
-                            TextButton(onClick = {
-                                sleepHours = (minutes / 60).toString()
-                                sleepMinutes = (minutes % 60).toString()
-                            }) { Text(PingProtocol.formatDuration(minutes)) }
-                        }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedTextField(
-                            value = sleepHours,
-                            onValueChange = { value ->
-                                if (value.length <= 2 && value.all { it.isDigit() }) sleepHours = value
-                            },
-                            label = { Text("Hours") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                        )
-                        OutlinedTextField(
-                            value = sleepMinutes,
-                            onValueChange = { value ->
-                                if (value.length <= 2 && value.all { it.isDigit() }) sleepMinutes = value
-                            },
-                            label = { Text("Minutes") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = { sleepRequest = SleepRequest(sleepTotal) },
-                        enabled = canSend && sleepTotalValid,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            if (sleepTotalValid) "Sleep for ${PingProtocol.formatDuration(sleepTotal)}"
-                            else "Enter 1 minute to 24 hours",
-                        )
-                    }
-                }
-            }
-            if (!authorized) {
-                Text(
-                    "This account is not authorized for this milestone. Sign out and use the configured Android test account.",
-                    color = MaterialTheme.colorScheme.error,
+                GlassButton(
+                    text = "Send PING",
+                    accent = GlassColors.Cyan,
+                    enabled = canSend,
+                    loading = sending && commandAction == PingProtocol.ACTION,
+                    onClick = { sendCommand(PingProtocol.ACTION, PingProtocol.pendingCommand(user.uid)) },
                 )
             }
+
+            GlassCommandCard(
+                title = "Speak",
+                tag = PingProtocol.SPEAK_ACTION,
+                description = "The laptop reads your text out loud.",
+                accent = GlassColors.Pink,
+            ) {
+                OutlinedTextField(
+                    value = speakText,
+                    onValueChange = { if (it.length <= PingProtocol.MAX_SPEAK_LENGTH) speakText = it },
+                    label = { Text("Text to speak on the laptop") },
+                    shape = GlassFieldShape,
+                    colors = glassTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "${speakText.length}/${PingProtocol.MAX_SPEAK_LENGTH}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.60f),
+                )
+                GlassButton(
+                    text = "Send SPEAK",
+                    accent = GlassColors.Pink,
+                    enabled = canSend && speakText.isNotBlank(),
+                    loading = sending && commandAction == PingProtocol.SPEAK_ACTION,
+                    onClick = {
+                        sendCommand(
+                            PingProtocol.SPEAK_ACTION,
+                            PingProtocol.speakCommand(user.uid, speakText.trim()),
+                        )
+                    },
+                )
+            }
+
+            GlassCommandCard(
+                title = "Sleep",
+                tag = PingProtocol.SLEEP_ACTION,
+                description = "Suspend the laptop. It wakes up by itself.",
+                accent = GlassColors.Violet,
+            ) {
+                GlassButton(
+                    text = "Sleep until morning",
+                    accent = GlassColors.Violet,
+                    enabled = canSend,
+                    onClick = { sleepRequest = SleepRequest(null) },
+                )
+                Text(
+                    "Or sleep for a set time",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Color.White.copy(alpha = 0.70f),
+                )
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf(2, 10, 30, 60, 120).forEach { minutes ->
+                        GlassChip(
+                            text = PingProtocol.formatDuration(minutes),
+                            onClick = {
+                                sleepHours = (minutes / 60).toString()
+                                sleepMinutes = (minutes % 60).toString()
+                            },
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = sleepHours,
+                        onValueChange = { value ->
+                            if (value.length <= 2 && value.all { it.isDigit() }) sleepHours = value
+                        },
+                        label = { Text("Hours") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        shape = GlassFieldShape,
+                        colors = glassTextFieldColors(),
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = sleepMinutes,
+                        onValueChange = { value ->
+                            if (value.length <= 2 && value.all { it.isDigit() }) sleepMinutes = value
+                        },
+                        label = { Text("Minutes") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        shape = GlassFieldShape,
+                        colors = glassTextFieldColors(),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                GlassButton(
+                    text = if (sleepTotalValid) "Sleep for ${PingProtocol.formatDuration(sleepTotal)}"
+                    else "Enter 1 minute to 24 hours",
+                    accent = GlassColors.Violet,
+                    prominent = false,
+                    enabled = canSend && sleepTotalValid,
+                    onClick = { sleepRequest = SleepRequest(sleepTotal) },
+                )
+            }
+
+            if (!authorized) {
+                GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Red, cornerRadius = 22.dp) {
+                    Text(
+                        "This account is not authorized for this milestone. Sign out and use the configured Android test account.",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+
             if (commandId != null) {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Latest command", style = MaterialTheme.typography.titleMedium)
-                        Text("ID: $commandId")
+                GlassCard(Modifier.fillMaxWidth(), accent = statusColor(commandStatus), cornerRadius = 22.dp) {
+                    Text(
+                        "Latest command",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("ID: $commandId", style = MaterialTheme.typography.bodySmall)
+                        Text("Action: $commandAction")
                         Text("Status: ${commandStatus ?: if (sending) "SENDING" else "WAITING"}")
                         if (commandStatus == "FAILED" && errorCode != null) {
                             Text("Error: $errorCode", color = MaterialTheme.colorScheme.error)
                         }
-                        Text("Action: $commandAction")
                         if (commandStatus == "PENDING") {
                             Text("Waiting for the agent.")
                         }
@@ -412,15 +490,28 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                                     PingProtocol.SPEAK_ACTION -> "The agent spoke your text."
                                     PingProtocol.SLEEP_ACTION -> "The laptop is going to sleep."
                                     else -> "PONG received from the agent."
-                                }
+                                },
                             )
                         }
                     }
                 }
             }
+
             if (error != null) {
                 Text(error!!, color = MaterialTheme.colorScheme.error)
             }
         }
     }
+}
+
+private fun connectionColor(connected: Boolean?): Color = when (connected) {
+    true -> GlassColors.Green
+    false -> GlassColors.Red
+    null -> GlassColors.Amber
+}
+
+private fun statusColor(status: String?): Color = when (status) {
+    "SUCCESS" -> GlassColors.Green
+    "FAILED" -> GlassColors.Red
+    else -> GlassColors.Amber
 }
