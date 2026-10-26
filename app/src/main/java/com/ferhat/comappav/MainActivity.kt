@@ -2,7 +2,6 @@ package com.ferhat.comappav
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -54,6 +53,7 @@ import com.ferhat.comappav.ui.glass.GlassColors
 import com.ferhat.comappav.ui.glass.GlassCommandCard
 import com.ferhat.comappav.ui.glass.GlassFieldShape
 import com.ferhat.comappav.ui.glass.GlassScreen
+import com.ferhat.comappav.ui.glass.LocalGlassPalette
 import com.ferhat.comappav.ui.glass.glassTextFieldColors
 import com.ferhat.comappav.ui.theme.ComAppAVTheme
 
@@ -65,10 +65,7 @@ private const val DATABASE_URL =
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
-        )
+        enableEdgeToEdge()
         val auth = FirebaseAuth.getInstance()
         val database = FirebaseDatabase.getInstance(DATABASE_URL)
         setContent {
@@ -104,7 +101,7 @@ private fun SignInScreen(auth: FirebaseAuth) {
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    Scaffold(containerColor = Color.Transparent, contentColor = Color.White) { padding ->
+    Scaffold(containerColor = Color.Transparent, contentColor = LocalGlassPalette.current.ink) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -113,7 +110,7 @@ private fun SignInScreen(auth: FirebaseAuth) {
                 .padding(24.dp),
             verticalArrangement = Arrangement.Center,
         ) {
-            GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Cyan) {
+            GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Blue) {
                 Text(
                     "ComApp AV",
                     style = MaterialTheme.typography.headlineMedium,
@@ -121,7 +118,7 @@ private fun SignInScreen(auth: FirebaseAuth) {
                 )
                 Text(
                     "Sign in with your Firebase Email/Password account to send commands.",
-                    color = Color.White.copy(alpha = 0.70f),
+                    color = LocalGlassPalette.current.inkMuted,
                 )
                 OutlinedTextField(
                     value = email,
@@ -151,7 +148,7 @@ private fun SignInScreen(auth: FirebaseAuth) {
                 }
                 GlassButton(
                     text = "Sign in",
-                    accent = GlassColors.Cyan,
+                    accent = GlassColors.Blue,
                     loading = isLoading,
                     enabled = !isLoading,
                     onClick = {
@@ -290,7 +287,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         )
     }
 
-    Scaffold(containerColor = Color.Transparent, contentColor = Color.White) { padding ->
+    Scaffold(containerColor = Color.Transparent, contentColor = LocalGlassPalette.current.ink) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -314,7 +311,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                         if (authorized) "Signed in as the Android test account"
                         else "Signed in with an unrecognized account",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.70f),
+                        color = LocalGlassPalette.current.inkMuted,
                     )
                 }
                 GlassChip("Sign out", onClick = { auth.signOut() })
@@ -344,11 +341,11 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 title = "Ping",
                 tag = PingProtocol.ACTION,
                 description = "Check that the agent is alive. It answers with PONG.",
-                accent = GlassColors.Cyan,
+                accent = GlassColors.Blue,
             ) {
                 GlassButton(
                     text = "Send PING",
-                    accent = GlassColors.Cyan,
+                    accent = GlassColors.Blue,
                     enabled = canSend,
                     loading = sending && commandAction == PingProtocol.ACTION,
                     onClick = { sendCommand(PingProtocol.ACTION, PingProtocol.pendingCommand(user.uid)) },
@@ -359,7 +356,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 title = "Speak",
                 tag = PingProtocol.SPEAK_ACTION,
                 description = "The laptop reads your text out loud.",
-                accent = GlassColors.Pink,
+                accent = GlassColors.Indigo,
             ) {
                 OutlinedTextField(
                     value = speakText,
@@ -372,11 +369,11 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 Text(
                     "${speakText.length}/${PingProtocol.MAX_SPEAK_LENGTH}",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.60f),
+                    color = LocalGlassPalette.current.inkFaint,
                 )
                 GlassButton(
                     text = "Send SPEAK",
-                    accent = GlassColors.Pink,
+                    accent = GlassColors.Indigo,
                     enabled = canSend && speakText.isNotBlank(),
                     loading = sending && commandAction == PingProtocol.SPEAK_ACTION,
                     onClick = {
@@ -403,7 +400,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 Text(
                     "Or sleep for a set time",
                     style = MaterialTheme.typography.labelLarge,
-                    color = Color.White.copy(alpha = 0.70f),
+                    color = LocalGlassPalette.current.inkMuted,
                 )
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),

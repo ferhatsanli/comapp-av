@@ -1,29 +1,44 @@
 package com.ferhat.comappav.ui.theme
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-// The glass look is built for a dark, colorful backdrop, so the app always uses this scheme.
-private val GlassColorScheme = darkColorScheme(
-    primary = Color(0xFF8FD8FF),
-    onPrimary = Color(0xFF00263A),
-    secondary = Color(0xFFFF9AD0),
-    tertiary = Color(0xFFB9A8FF),
-    background = Color(0xFF0A0F24),
-    onBackground = Color.White,
-    surface = Color(0xFF151A33),
-    onSurface = Color.White,
-    error = Color(0xFFFF8A9A),
+// The glass look does not use dynamic color on purpose: the palette is fixed (blue/violet).
+private val GlassDarkColorScheme = darkColorScheme(
+    primary = Color(0xFF8FB0FF),
+    onPrimary = Color(0xFF0A1B45),
+    secondary = Color(0xFFA9A4F5),
+    tertiary = Color(0xFFB7A4F0),
+    background = Color(0xFF060A14),
+    onBackground = Color(0xFFE8ECF8),
+    surface = Color(0xFF111833),
+    onSurface = Color(0xFFE8ECF8),
+    error = Color(0xFFF87171),
+)
+
+private val GlassLightColorScheme = lightColorScheme(
+    primary = Color(0xFF2F5BD0),
+    onPrimary = Color.White,
+    secondary = Color(0xFF5B54D6),
+    tertiary = Color(0xFF6D45C9),
+    background = Color(0xFFEEF2FA),
+    onBackground = Color(0xFF0F172A),
+    surface = Color(0xFFF4F6FC),
+    onSurface = Color(0xFF0F172A),
+    error = Color(0xFFC62F3A),
 )
 
 @Composable
 fun ComAppAVTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
     MaterialTheme(
-        colorScheme = GlassColorScheme,
+        colorScheme = if (darkTheme) GlassDarkColorScheme else GlassLightColorScheme,
         typography = Typography,
         content = content
     )

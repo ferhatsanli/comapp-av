@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -41,6 +42,7 @@ fun GlassButton(
     prominent: Boolean = true,
     accent: Color = GlassColors.Neutral,
 ) {
+    val palette = LocalGlassPalette.current
     Box(
         modifier
             .fillMaxWidth()
@@ -51,11 +53,14 @@ fun GlassButton(
                 if (prominent) {
                     drawRect(
                         Brush.verticalGradient(
-                            listOf(accent.copy(alpha = 0.70f), accent.copy(alpha = 0.35f)),
+                            listOf(
+                                accent.copy(alpha = palette.buttonTop),
+                                accent.copy(alpha = palette.buttonBottom),
+                            ),
                         ),
                     )
                 } else {
-                    drawRect(Color.White.copy(alpha = 0.10f))
+                    drawRect(palette.chipFill)
                 }
                 // Top highlight so the pill looks slightly domed.
                 drawRect(
@@ -68,7 +73,7 @@ fun GlassButton(
             .border(
                 1.dp,
                 Brush.linearGradient(
-                    colors = listOf(Color.White.copy(alpha = 0.75f), Color.White.copy(alpha = 0.10f)),
+                    colors = listOf(palette.rimTop, palette.rimBottom),
                     start = Offset.Zero,
                     end = Offset(400f, 200f),
                 ),
@@ -86,7 +91,7 @@ fun GlassButton(
         } else {
             Text(
                 text = text,
-                color = Color.White,
+                color = if (prominent) Color.White else palette.ink,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.sp,
                 letterSpacing = 0.4.sp,
@@ -102,15 +107,16 @@ fun GlassChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val palette = LocalGlassPalette.current
     Box(
         modifier
             .height(36.dp)
             .clip(Pill)
-            .background(Color.White.copy(alpha = 0.10f))
+            .background(palette.chipFill)
             .border(
                 1.dp,
                 Brush.linearGradient(
-                    listOf(Color.White.copy(alpha = 0.55f), Color.White.copy(alpha = 0.08f)),
+                    listOf(palette.rimTop, palette.rimBottom),
                 ),
                 Pill,
             )
@@ -118,24 +124,27 @@ fun GlassChip(
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text = text, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Text(text = text, color = palette.ink, fontSize = 13.sp, fontWeight = FontWeight.Medium)
     }
 }
 
-/** Text field colors that stay readable on glass. */
+/** Text field colors that stay readable on glass in both themes. */
 @Composable
-fun glassTextFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedTextColor = Color.White,
-    unfocusedTextColor = Color.White,
-    disabledTextColor = Color.White.copy(alpha = 0.5f),
-    cursorColor = Color.White,
-    focusedBorderColor = Color.White.copy(alpha = 0.75f),
-    unfocusedBorderColor = Color.White.copy(alpha = 0.28f),
-    focusedLabelColor = Color.White.copy(alpha = 0.85f),
-    unfocusedLabelColor = Color.White.copy(alpha = 0.60f),
-    focusedContainerColor = Color.White.copy(alpha = 0.07f),
-    unfocusedContainerColor = Color.White.copy(alpha = 0.07f),
-    disabledContainerColor = Color.White.copy(alpha = 0.04f),
-)
+fun glassTextFieldColors(): TextFieldColors {
+    val p = LocalGlassPalette.current
+    return OutlinedTextFieldDefaults.colors(
+        focusedTextColor = p.ink,
+        unfocusedTextColor = p.ink,
+        disabledTextColor = p.ink.copy(alpha = 0.5f),
+        cursorColor = p.ink,
+        focusedBorderColor = p.ink.copy(alpha = 0.70f),
+        unfocusedBorderColor = p.ink.copy(alpha = 0.25f),
+        focusedLabelColor = p.ink.copy(alpha = 0.85f),
+        unfocusedLabelColor = p.ink.copy(alpha = 0.60f),
+        focusedContainerColor = p.fieldFill,
+        unfocusedContainerColor = p.fieldFill,
+        disabledContainerColor = p.fieldFill.copy(alpha = p.fieldFill.alpha * 0.6f),
+    )
+}
 
 val GlassFieldShape = RoundedCornerShape(16.dp)

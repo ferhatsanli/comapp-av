@@ -64,6 +64,7 @@ fun GlassCard(
 ) {
     val shape = RoundedCornerShape(cornerRadius)
     val backdrop = LocalGlassBackdrop.current
+    val palette = LocalGlassPalette.current
     var origin by remember { mutableStateOf(Offset.Zero) }
 
     Box(
@@ -71,8 +72,8 @@ fun GlassCard(
             .shadow(
                 elevation = 20.dp,
                 shape = shape,
-                ambientColor = Color.Black.copy(alpha = 0.40f),
-                spotColor = accent.copy(alpha = 0.50f),
+                ambientColor = palette.shadow,
+                spotColor = accent.copy(alpha = 0.35f),
             )
             .clip(shape)
             .onGloballyPositioned { origin = it.positionInRoot() },
@@ -91,49 +92,46 @@ fun GlassCard(
                     drawAurora(
                         phase = backdrop.phase.value,
                         area = Size(root.width.toFloat(), root.height.toFloat()),
+                        palette = palette,
                     )
                 }
             }
         } else {
-            Box(Modifier.matchParentSize().background(Color(0xFF1B2140)))
+            Box(Modifier.matchParentSize().background(palette.baseMid))
         }
-        Box(Modifier.matchParentSize().drawBehind { drawFrost(accent) })
+        Box(Modifier.matchParentSize().drawBehind { drawFrost(accent, palette) })
         Column(
             modifier = Modifier.padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             content = content,
         )
-        Box(Modifier.matchParentSize().drawBehind { drawRim(accent, cornerRadius.toPx()) })
+        Box(Modifier.matchParentSize().drawBehind { drawRim(accent, cornerRadius.toPx(), palette) })
     }
 }
 
-private fun DrawScope.drawFrost(accent: Color) {
+private fun DrawScope.drawFrost(accent: Color, palette: GlassPalette) {
     drawRect(
         brush = Brush.verticalGradient(
-            listOf(
-                Color.White.copy(alpha = 0.22f),
-                Color.White.copy(alpha = 0.07f),
-                Color.White.copy(alpha = 0.12f),
-            ),
+            listOf(palette.frostTop, palette.frostMid, palette.frostBottom),
         ),
     )
     drawRect(
         brush = Brush.radialGradient(
-            colors = listOf(accent.copy(alpha = 0.32f), Color.Transparent),
+            colors = listOf(accent.copy(alpha = palette.accentGlow), Color.Transparent),
             center = Offset.Zero,
             radius = size.maxDimension * 0.9f,
         ),
     )
 }
 
-private fun DrawScope.drawRim(accent: Color, corner: Float) {
+private fun DrawScope.drawRim(accent: Color, corner: Float, palette: GlassPalette) {
     val outerStroke = 1.2.dp.toPx()
     val specular = Brush.linearGradient(
         colors = listOf(
-            Color.White.copy(alpha = 0.85f),
-            Color.White.copy(alpha = 0.12f),
-            accent.copy(alpha = 0.35f),
-            Color.White.copy(alpha = 0.45f),
+            palette.rimTop,
+            palette.rimBottom,
+            accent.copy(alpha = 0.30f),
+            palette.rimTop.copy(alpha = palette.rimTop.alpha * 0.5f),
         ),
         start = Offset.Zero,
         end = Offset(size.width, size.height),
@@ -149,9 +147,9 @@ private fun DrawScope.drawRim(accent: Color, corner: Float) {
     // Inner lip: strokes that fade towards the middle, brighter on the top-left edge.
     val lipBrush = Brush.linearGradient(
         colors = listOf(
-            Color.White.copy(alpha = 0.60f),
-            Color.White.copy(alpha = 0.05f),
-            accent.copy(alpha = 0.25f),
+            palette.rimTop.copy(alpha = palette.rimTop.alpha * 0.7f),
+            palette.rimBottom.copy(alpha = palette.rimBottom.alpha * 0.5f),
+            accent.copy(alpha = 0.20f),
         ),
         start = Offset.Zero,
         end = Offset(size.width, size.height),
@@ -174,6 +172,7 @@ private fun DrawScope.drawRim(accent: Color, corner: Float) {
 /** Glowing glass bead used as the icon of a command card. */
 @Composable
 fun GlassOrb(accent: Color, modifier: Modifier = Modifier, size: Dp = 40.dp) {
+    val palette = LocalGlassPalette.current
     Box(
         modifier
             .size(size)
@@ -182,9 +181,9 @@ fun GlassOrb(accent: Color, modifier: Modifier = Modifier, size: Dp = 40.dp) {
                 drawRect(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = 0.90f),
+                            Color.White.copy(alpha = 0.75f),
                             accent.copy(alpha = 0.95f),
-                            accent.copy(alpha = 0.45f),
+                            accent.copy(alpha = 0.55f),
                         ),
                         center = Offset(this.size.width * 0.32f, this.size.height * 0.28f),
                         radius = this.size.maxDimension * 0.9f,
@@ -194,7 +193,7 @@ fun GlassOrb(accent: Color, modifier: Modifier = Modifier, size: Dp = 40.dp) {
             .border(
                 1.dp,
                 Brush.linearGradient(
-                    listOf(Color.White.copy(alpha = 0.80f), Color.White.copy(alpha = 0.10f)),
+                    listOf(palette.rimTop, palette.rimBottom),
                 ),
                 CircleShape,
             ),
@@ -204,15 +203,16 @@ fun GlassOrb(accent: Color, modifier: Modifier = Modifier, size: Dp = 40.dp) {
 /** Small monospace label such as the action name of a command. */
 @Composable
 fun GlassTag(text: String, modifier: Modifier = Modifier) {
+    val palette = LocalGlassPalette.current
     val shape = RoundedCornerShape(50)
     Box(
         modifier
             .clip(shape)
-            .background(Color.White.copy(alpha = 0.10f))
+            .background(palette.chipFill)
             .border(
                 1.dp,
                 Brush.linearGradient(
-                    listOf(Color.White.copy(alpha = 0.55f), Color.White.copy(alpha = 0.08f)),
+                    listOf(palette.rimTop, palette.rimBottom),
                 ),
                 shape,
             )
@@ -223,7 +223,7 @@ fun GlassTag(text: String, modifier: Modifier = Modifier) {
             fontFamily = FontFamily.Monospace,
             fontSize = 11.sp,
             letterSpacing = 1.sp,
-            color = Color.White.copy(alpha = 0.85f),
+            color = palette.ink.copy(alpha = 0.85f),
         )
     }
 }
@@ -241,6 +241,7 @@ fun GlassCommandCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val palette = LocalGlassPalette.current
     GlassCard(modifier = modifier.fillMaxWidth(), accent = accent) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             GlassOrb(accent)
@@ -254,7 +255,7 @@ fun GlassCommandCard(
                 Text(
                     text = description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.70f),
+                    color = palette.inkMuted,
                 )
             }
             Spacer(Modifier.width(8.dp))
