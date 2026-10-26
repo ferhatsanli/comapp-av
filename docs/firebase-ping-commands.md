@@ -83,3 +83,15 @@ Expected test output is one passing summary covering denied unauthenticated read
 | `errorCode` | `AGENT_ERROR` when the status is `FAILED`, for example when no audio device works |
 
 The status transitions are the same as for `PING`. Speech has a side effect, so after an agent crash a stale `PROCESSING` claim can be read aloud a second time. The Rules still accept no other fields, so a command cannot carry a voice, a program name or shell text; the agent decides how to speak.
+
+## SLEEP command
+
+`SLEEP` asks the agent to suspend the machine it runs on. A scheduled wake-up (see the agent repository) brings it back at a fixed time, so a forgotten or accidental SLEEP never leaves the laptop off for good.
+
+| Field | Rule |
+| --- | --- |
+| `action` | `SLEEP`; carries no `text` |
+| `createdAt` | number, required for `SLEEP` and forbidden for other actions; written as the server timestamp and, at creation, not older than 60 seconds; immutable afterwards |
+| `result` | `SLEEPING` when the status is `SUCCESS` |
+
+The agent marks the command `SUCCESS` first and suspends a few seconds later, so the phone sees the answer before the laptop goes to sleep. Because the laptop cannot receive commands while asleep, a SLEEP that waits in the queue (laptop offline) must not fire hours later: the agent ignores any SLEEP older than 90 seconds, and a SLEEP whose claim was left over from an earlier attempt, and reports `FAILED` with `AGENT_ERROR`.

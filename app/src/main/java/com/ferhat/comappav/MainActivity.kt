@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -24,6 +25,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -163,13 +165,14 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var sending by remember { mutableStateOf(false) }
     var commandAction by remember { mutableStateOf(PingProtocol.ACTION) }
     var speakText by rememberSaveable { mutableStateOf("") }
+    var confirmSleep by remember { mutableStateOf(false) }
     val authorized = user.uid == PingProtocol.ANDROID_UID
     val canSend = authorized &&
         connected == true &&
         !sending &&
         commandStatus !in setOf("PENDING", "PROCESSING")
 
-    fun sendCommand(action: String, payload: Map<String, String>) {
+    fun sendCommand(action: String, payload: Map<String, Any>) {
         val newCommand = database.getReference("commands").push()
         val id = newCommand.key
         if (id == null) {
@@ -233,6 +236,28 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
     }
 
+    if (confirmSleep) {
+        AlertDialog(
+            onDismissRequest = { confirmSleep = false },
+            title = { Text("Put the laptop to sleep?") },
+            text = {
+                Text(
+                    "The laptop suspends in a few seconds and wakes up at " +
+                        "${PingProtocol.WAKE_TIME_LABEL}. Until then it cannot receive commands.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmSleep = false
+                    sendCommand(PingProtocol.SLEEP_ACTION, PingProtocol.sleepCommand(user.uid))
+                }) { Text("Sleep") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmSleep = false }) { Text("Cancel") }
+            },
+        )
+    }
+
     Scaffold { padding ->
         Column(
             modifier = Modifier
@@ -291,6 +316,13 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
             ) {
                 Text("SPEAK")
             }
+            OutlinedButton(
+                onClick = { confirmSleep = true },
+                enabled = canSend,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("SLEEP until ${PingProtocol.WAKE_TIME_LABEL}")
+            }
             if (!authorized) {
                 Text(
                     "This account is not authorized for this milestone. Sign out and use the configured Android test account.",
@@ -315,8 +347,12 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                         }
                         if (commandStatus == "SUCCESS") {
                             Text(
-                                if (commandAction == PingProtocol.SPEAK_ACTION) "The agent spoke your text."
-                                else "PONG received from the agent."
+                                when (commandAction) {
+                                    PingProtocol.SPEAK_ACTION -> "The agent spoke your text."
+                                    PingProtocol.SLEEP_ACTION ->
+                                        "The laptop is going to sleep. It wakes up at ${PingProtocol.WAKE_TIME_LABEL}."
+                                    else -> "PONG received from the agent."
+                                }
                             )
                         }
                     }

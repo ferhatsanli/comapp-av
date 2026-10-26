@@ -11,6 +11,7 @@ import {
   orderByChild,
   query,
   ref,
+  serverTimestamp,
   set,
   update,
 } from "firebase/database";
@@ -189,6 +190,40 @@ try {
       status: "PROCESSING", processingAt: Date.now(),
     }));
     await assertFails(update(command(piDb, "ping-again"), { status: "SUCCESS", result: "SPOKEN", processingAt: null }));
+  });
+  await check("SLEEP needs a fresh server timestamp, carries no text, and completes with SLEEPING", async () => {
+    const sleep = (extra = {}) => ({
+      action: "SLEEP", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+      createdAt: serverTimestamp(), ...extra,
+    });
+    await assertSucceeds(set(command(androidDb, "sleep-ok"), sleep()));
+    await assertFails(set(command(androidDb, "sleep-no-time"), {
+      action: "SLEEP", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+    }));
+    await assertFails(set(command(androidDb, "sleep-old"), sleep({ createdAt: Date.now() - 120_000 })));
+    await assertFails(set(command(androidDb, "sleep-future"), sleep({ createdAt: Date.now() + 3_600_000 })));
+    await assertFails(set(command(androidDb, "sleep-text"), sleep({ text: "hello" })));
+    await assertFails(set(command(androidDb, "sleep-extra"), sleep({ delay: 5 })));
+    await assertFails(set(command(androidDb, "ping-with-time"), {
+      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING", createdAt: serverTimestamp(),
+    }));
+    await assertFails(set(command(androidDb, "speak-with-time"), {
+      action: "SPEAK", senderUid: ANDROID, targetUid: PI, status: "PENDING", text: "hi",
+      createdAt: serverTimestamp(),
+    }));
+
+    await assertSucceeds(update(command(piDb, "sleep-ok"), {
+      status: "PROCESSING", processingAt: Date.now(),
+    }));
+    await assertFails(update(command(piDb, "sleep-ok"), { createdAt: Date.now() }));
+    await assertFails(update(command(piDb, "sleep-ok"), { status: "SUCCESS", result: "PONG", processingAt: null }));
+    await assertFails(update(command(piDb, "sleep-ok"), { status: "SUCCESS", result: "SPOKEN", processingAt: null }));
+    await assertSucceeds(update(command(piDb, "sleep-ok"), {
+      status: "SUCCESS", result: "SLEEPING", processingAt: null,
+    }));
+    const done = await assertSucceeds(get(command(androidDb, "sleep-ok")));
+    assert.equal(done.val().result, "SLEEPING");
+    assert.equal(typeof done.val().createdAt, "number");
   });
 } finally {
   await testEnv.cleanup();
