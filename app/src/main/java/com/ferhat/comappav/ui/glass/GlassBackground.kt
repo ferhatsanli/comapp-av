@@ -25,7 +25,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import kotlin.math.PI
@@ -52,7 +51,8 @@ private class Blob(
     val offset: Float,
 )
 
-private class Bokeh(
+/** A soft, blurry ring of light: a radial gradient that peaks at the ring radius and fades both ways. */
+private class Halo(
     val x: Float,
     val y: Float,
     val radius: Float,
@@ -68,15 +68,12 @@ private val AuroraBlobs = listOf(
     Blob(true, 0.10f, 0.85f, 0.60f, 0.08f, 0.08f, 2, 0.80f),
 )
 
-// Small, crisp shapes. They stay sharp on the open background and turn into soft
-// bokeh behind a glass card, which is what makes the frosted effect readable.
-private val BokehOrbs = listOf(
-    Bokeh(0.20f, 0.22f, 0.050f, 0.04f, 1, 0.10f),
-    Bokeh(0.78f, 0.14f, 0.070f, 0.05f, 1, 0.45f),
-    Bokeh(0.12f, 0.50f, 0.080f, 0.05f, 1, 0.70f),
-    Bokeh(0.88f, 0.58f, 0.060f, 0.04f, 2, 0.90f),
-    Bokeh(0.45f, 0.76f, 0.070f, 0.05f, 1, 0.30f),
-    Bokeh(0.74f, 0.92f, 0.050f, 0.06f, 2, 0.55f),
+// Large, faint rings. They have no hard edge anywhere, so they read as bands of light
+// and turn into an even softer glow behind a glass card.
+private val Halos = listOf(
+    Halo(0.22f, 0.20f, 0.40f, 0.04f, 1, 0.10f),
+    Halo(0.85f, 0.45f, 0.55f, 0.05f, 1, 0.50f),
+    Halo(0.30f, 0.82f, 0.50f, 0.05f, 2, 0.30f),
 )
 
 /**
@@ -116,20 +113,34 @@ internal fun DrawScope.drawAurora(phase: Float, area: Size, palette: GlassPalett
         )
     }
 
-    for (orb in BokehOrbs) {
-        val angle = twoPi * (phase * orb.speed + orb.offset)
+    for (halo in Halos) {
+        val angle = twoPi * (phase * halo.speed + halo.offset)
         val center = Offset(
-            x = area.width * orb.x + cos(angle) * unit * orb.drift,
-            y = area.height * orb.y + sin(angle) * unit * orb.drift,
+            x = area.width * halo.x + cos(angle) * unit * halo.drift,
+            y = area.height * halo.y + sin(angle) * unit * halo.drift,
         )
-        val radius = unit * orb.radius
-        drawCircle(color = palette.bokeh.copy(alpha = palette.bokehAlpha), radius = radius, center = center)
-        drawCircle(
-            color = palette.bokeh.copy(alpha = palette.bokehAlpha * 1.4f),
-            radius = radius,
-            center = center,
-            style = Stroke(width = unit * 0.005f),
-        )
+        // Two concentric bands per halo; the inner one is fainter.
+        for ((scale, strength) in listOf(1.0f to 1.0f, 0.68f to 0.55f)) {
+            val ringRadius = unit * halo.radius * scale
+            val gradientRadius = ringRadius * 1.5f
+            val mid = ringRadius / gradientRadius
+            val color = palette.bokeh.copy(alpha = palette.bokehAlpha * strength)
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colorStops = arrayOf(
+                        0f to Color.Transparent,
+                        (mid - 0.20f) to Color.Transparent,
+                        mid to color,
+                        (mid + 0.20f) to Color.Transparent,
+                        1f to Color.Transparent,
+                    ),
+                    center = center,
+                    radius = gradientRadius,
+                ),
+                radius = gradientRadius,
+                center = center,
+            )
+        }
     }
 }
 

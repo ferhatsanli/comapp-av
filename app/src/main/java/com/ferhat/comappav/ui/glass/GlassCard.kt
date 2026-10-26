@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -169,42 +168,11 @@ private fun DrawScope.drawRim(accent: Color, corner: Float, palette: GlassPalett
     }
 }
 
-/** Glowing glass bead used as the icon of a command card. */
-@Composable
-fun GlassOrb(accent: Color, modifier: Modifier = Modifier, size: Dp = 40.dp) {
-    val palette = LocalGlassPalette.current
-    Box(
-        modifier
-            .size(size)
-            .clip(CircleShape)
-            .drawBehind {
-                drawRect(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.75f),
-                            accent.copy(alpha = 0.95f),
-                            accent.copy(alpha = 0.55f),
-                        ),
-                        center = Offset(this.size.width * 0.32f, this.size.height * 0.28f),
-                        radius = this.size.maxDimension * 0.9f,
-                    ),
-                )
-            }
-            .border(
-                1.dp,
-                Brush.linearGradient(
-                    listOf(palette.rimTop, palette.rimBottom),
-                ),
-                CircleShape,
-            ),
-    )
-}
-
 /** Small monospace label such as the action name of a command. */
 @Composable
 fun GlassTag(text: String, modifier: Modifier = Modifier) {
     val palette = LocalGlassPalette.current
-    val shape = RoundedCornerShape(50)
+    val shape = RoundedCornerShape(6.dp)
     Box(
         modifier
             .clip(shape)
@@ -244,8 +212,6 @@ fun GlassCommandCard(
     val palette = LocalGlassPalette.current
     GlassCard(modifier = modifier.fillMaxWidth(), accent = accent) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            GlassOrb(accent)
-            Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     text = title,

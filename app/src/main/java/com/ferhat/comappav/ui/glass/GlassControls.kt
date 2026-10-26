@@ -26,10 +26,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val Pill = RoundedCornerShape(50)
+// macOS push buttons are rounded rectangles, not pills.
+private val ButtonShape = RoundedCornerShape(10.dp)
+private val ChipShape = RoundedCornerShape(8.dp)
 
 /**
- * Glass pill button. [prominent] buttons are filled with the accent color, the others are
+ * Glass push button in the macOS style. [prominent] buttons are filled with the accent color, the others are
  * plain frosted glass.
  */
 @Composable
@@ -46,9 +48,9 @@ fun GlassButton(
     Box(
         modifier
             .fillMaxWidth()
-            .height(52.dp)
+            .height(44.dp)
             .alpha(if (enabled) 1f else 0.45f)
-            .clip(Pill)
+            .clip(ButtonShape)
             .drawBehind {
                 if (prominent) {
                     drawRect(
@@ -62,11 +64,11 @@ fun GlassButton(
                 } else {
                     drawRect(palette.chipFill)
                 }
-                // Top highlight so the pill looks slightly domed.
+                // Subtle top sheen, like an aqua push button.
                 drawRect(
                     Brush.verticalGradient(
-                        colors = listOf(Color.White.copy(alpha = 0.28f), Color.Transparent),
-                        endY = size.height * 0.55f,
+                        colors = listOf(Color.White.copy(alpha = 0.18f), Color.Transparent),
+                        endY = size.height * 0.50f,
                     ),
                 )
             }
@@ -77,7 +79,7 @@ fun GlassButton(
                     start = Offset.Zero,
                     end = Offset(400f, 200f),
                 ),
-                Pill,
+                ButtonShape,
             )
             .clickable(enabled = enabled && !loading, onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -92,9 +94,8 @@ fun GlassButton(
             Text(
                 text = text,
                 color = if (prominent) Color.White else palette.ink,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 15.sp,
-                letterSpacing = 0.4.sp,
+                fontWeight = FontWeight.Medium,
+                fontSize = 14.sp,
             )
         }
     }
@@ -110,18 +111,18 @@ fun GlassChip(
     val palette = LocalGlassPalette.current
     Box(
         modifier
-            .height(36.dp)
-            .clip(Pill)
+            .height(32.dp)
+            .clip(ChipShape)
             .background(palette.chipFill)
             .border(
                 1.dp,
                 Brush.linearGradient(
                     listOf(palette.rimTop, palette.rimBottom),
                 ),
-                Pill,
+                ChipShape,
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(text = text, color = palette.ink, fontSize = 13.sp, fontWeight = FontWeight.Medium)
@@ -147,4 +148,4 @@ fun glassTextFieldColors(): TextFieldColors {
     )
 }
 
-val GlassFieldShape = RoundedCornerShape(16.dp)
+val GlassFieldShape = RoundedCornerShape(10.dp)

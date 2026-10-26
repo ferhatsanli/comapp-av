@@ -48,7 +48,7 @@ val DarkGlassPalette = GlassPalette(
     blobB = Color(0xFF4B2FB8),
     blobAlpha = 0.55f,
     bokeh = Color(0xFFA8BCFF),
-    bokehAlpha = 0.20f,
+    bokehAlpha = 0.24f,
     ink = Color(0xFFE8ECF8),
     frostTop = Color.White.copy(alpha = 0.14f),
     frostMid = Color.White.copy(alpha = 0.04f),
