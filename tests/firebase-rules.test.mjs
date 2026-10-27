@@ -293,7 +293,7 @@ try {
     }));
     await assertFails(set(ref(piDb, "network/latest"), {
       scannedAt: Date.now(),
-      devices: { "AA:BB:CC:DD:EE:FF": { ip: "192.168.1.10" } },
+      devices: { "AA-BB-CC-DD-EE-FF": { ip: "192.168.1.10" } },
     }));
     await assertFails(set(ref(piDb, "network/latest"), {
       scannedAt: Date.now(),
@@ -301,7 +301,7 @@ try {
     }));
     await assertFails(set(ref(piDb, "network/latest"), {
       scannedAt: Date.now(),
-      devices: { "AA:BB:CC:DD:EE:FF": { ip: "192.168.1.10", name: "Phone", note: "x" } },
+      devices: { "AA-BB-CC-DD-EE-FF": { ip: "192.168.1.10", name: "Phone", note: "x" } },
     }));
     await assertFails(set(ref(androidDb, "network/latest"), {
       scannedAt: Date.now(),
@@ -311,12 +311,12 @@ try {
     await assertSucceeds(set(ref(piDb, "network/latest"), {
       scannedAt: Date.now(),
       devices: {
-        "AA:BB:CC:DD:EE:FF": { ip: "192.168.1.10", name: "Fedora" },
-        "11:22:33:44:55:66": { ip: "192.168.1.20", name: "Unknown" },
+        "AA-BB-CC-DD-EE-FF": { ip: "192.168.1.10", name: "Fedora" },
+        "11-22-33-44-55-66": { ip: "192.168.1.20", name: "Unknown" },
       },
     }));
     const latest = await assertSucceeds(get(ref(androidDb, "network/latest")));
-    assert.equal(latest.child("devices/AA:BB:CC:DD:EE:FF/name").val(), "Fedora");
+    assert.equal(latest.child("devices/AA-BB-CC-DD-EE-FF/name").val(), "Fedora");
     await assertFails(get(ref(piDb, "network/latest")));
   });
 } finally {
