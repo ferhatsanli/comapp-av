@@ -76,9 +76,6 @@ private data class PowerSnapshot(
     val usagePercent: Double?,
     val tempC: Long?,
     val packageWatts: Double?,
-    val coreWatts: Double?,
-    val uncoreWatts: Double?,
-    val dramWatts: Double?,
     val coreFreqMhz: List<Long>,
     val batteryPercent: Long?,
     val fanRpm: Long?,
@@ -348,9 +345,6 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     usagePercent = cpu.child("usagePercent").getValue(Double::class.java),
                     tempC = cpu.child("tempC").getValue(Long::class.java),
                     packageWatts = cpu.child("packageWatts").getValue(Double::class.java),
-                    coreWatts = cpu.child("coreWatts").getValue(Double::class.java),
-                    uncoreWatts = cpu.child("uncoreWatts").getValue(Double::class.java),
-                    dramWatts = cpu.child("dramWatts").getValue(Double::class.java),
                     coreFreqMhz = cpu.child("coreFreqMhz").children.mapNotNull {
                         it.getValue(Long::class.java)
                     },
@@ -695,18 +689,6 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                                 Text(
                                     "Core frequency (avg): ${"%.1f".format(avgGhz)} GHz " +
                                         "(${power.coreFreqMhz.size} cores)",
-                                )
-                            }
-                            val breakdown = listOfNotNull(
-                                power.coreWatts?.let { "cores ${"%.1f".format(it)} W" },
-                                power.uncoreWatts?.let { "iGPU ${"%.1f".format(it)} W" },
-                                power.dramWatts?.let { "DRAM ${"%.1f".format(it)} W" },
-                            )
-                            if (breakdown.isNotEmpty()) {
-                                Text(
-                                    "RAPL breakdown: ${breakdown.joinToString(", ")}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = LocalGlassPalette.current.inkMuted,
                                 )
                             }
                             power.batteryPercent?.let { Text("Battery: $it%") }

@@ -49,9 +49,6 @@
           "tempC": { ".validate": "newData.isNumber() && newData.val() >= -40 && newData.val() <= 150" },
           "usagePercent": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
           "packageWatts": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500" },
-          "coreWatts": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500" },
-          "uncoreWatts": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500" },
-          "dramWatts": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500" },
           "coreFreqMhz": {
             "$core": {
               ".validate": "$core.matches(/^cpu[0-9]+$/) && newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000"

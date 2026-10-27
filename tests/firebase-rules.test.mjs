@@ -384,7 +384,11 @@ try {
     }));
     await assertFails(set(ref(piDb, "power/latest"), {
       reportedAt: Date.now(),
-      cpu: { coreWatts: -1 },
+      cpu: { packageWatts: -1 },
+    }));
+    await assertFails(set(ref(piDb, "power/latest"), {
+      reportedAt: Date.now(),
+      cpu: { coreWatts: 4.1 }, // dropped feature: no sudoers rule, Rules no longer accept it
     }));
     await assertFails(set(ref(piDb, "power/latest"), {
       reportedAt: Date.now(),
@@ -405,9 +409,6 @@ try {
         tempC: 55,
         usagePercent: 12.3,
         packageWatts: 9.4,
-        coreWatts: 4.1,
-        uncoreWatts: 1.2,
-        dramWatts: 0.3,
         coreFreqMhz: { "cpu0": 1800, "cpu1": 2200 },
       },
       battery: { percent: 87 },
