@@ -319,6 +319,54 @@ try {
     assert.equal(latest.child("devices/AA-BB-CC-DD-EE-FF/name").val(), "Fedora");
     await assertFails(get(ref(piDb, "network/latest")));
   });
+  await check("Only the Pi writes /power/latest, and only Android reads it, with required shape", async () => {
+    await assertFails(get(ref(anonymousDb, "power/latest")));
+    await assertFails(set(ref(piDb, "power/latest"), {
+      reportedAt: Date.now(),
+    }));
+    await assertFails(set(ref(piDb, "power/latest"), {
+      cpu: { usagePercent: 12.3 },
+    }));
+    await assertFails(set(ref(piDb, "power/latest"), {
+      reportedAt: Date.now(),
+      cpu: { usagePercent: 150 },
+    }));
+    await assertFails(set(ref(piDb, "power/latest"), {
+      reportedAt: Date.now(),
+      cpu: { tempC: 55, coreFreqMhz: { "cpu0": 1800 }, note: "x" },
+    }));
+    await assertFails(set(ref(piDb, "power/latest"), {
+      reportedAt: Date.now(),
+      cpu: { coreFreqMhz: { "notacore": 1800 } },
+    }));
+    await assertFails(set(ref(piDb, "power/latest"), {
+      reportedAt: Date.now(),
+      cpu: { usagePercent: 12.3 },
+      battery: { percent: 150 },
+    }));
+    await assertFails(set(ref(androidDb, "power/latest"), {
+      reportedAt: Date.now(),
+      cpu: { usagePercent: 12.3 },
+    }));
+
+    await assertSucceeds(set(ref(piDb, "power/latest"), {
+      reportedAt: Date.now(),
+      cpu: {
+        tempC: 55,
+        usagePercent: 12.3,
+        packageWatts: 9.4,
+        coreFreqMhz: { "cpu0": 1800, "cpu1": 2200 },
+      },
+      battery: { percent: 87 },
+    }));
+    await assertSucceeds(set(ref(piDb, "power/latest"), {
+      reportedAt: Date.now(),
+      cpu: { usagePercent: 5 },
+    }));
+    const latest = await assertSucceeds(get(ref(androidDb, "power/latest")));
+    assert.equal(latest.child("cpu/usagePercent").val(), 5);
+    await assertFails(get(ref(piDb, "power/latest")));
+  });
 } finally {
   await testEnv.cleanup();
 }

@@ -38,6 +38,30 @@
         },
         "$other": { ".validate": false }
       }
+    },
+    "power": {
+      "latest": {
+        ".read": "auth != null && auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462'",
+        ".write": "auth != null && auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1'",
+        ".validate": "newData.hasChildren(['reportedAt', 'cpu'])",
+        "reportedAt": { ".validate": "newData.isNumber() && newData.val() <= now" },
+        "cpu": {
+          "tempC": { ".validate": "newData.isNumber() && newData.val() >= -40 && newData.val() <= 150" },
+          "usagePercent": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
+          "packageWatts": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500" },
+          "coreFreqMhz": {
+            "$core": {
+              ".validate": "$core.matches(/^cpu[0-9]+$/) && newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000"
+            }
+          },
+          "$other": { ".validate": false }
+        },
+        "battery": {
+          "percent": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
+          "$other": { ".validate": false }
+        },
+        "$other": { ".validate": false }
+      }
     }
   }
 }

@@ -71,6 +71,15 @@ private data class SleepRequest(val minutes: Int?)
 
 private data class NetworkDevice(val mac: String, val ip: String, val name: String)
 
+private data class PowerSnapshot(
+    val reportedAt: Long?,
+    val usagePercent: Double?,
+    val tempC: Long?,
+    val packageWatts: Double?,
+    val coreFreqMhz: List<Long>,
+    val batteryPercent: Long?,
+)
+
 private const val DATABASE_URL =
     "https://comapp-av-default-rtdb.europe-west1.firebasedatabase.app"
 
@@ -203,6 +212,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var sleepMinutes by rememberSaveable { mutableStateOf("30") }
     var networkDevices by remember { mutableStateOf<List<NetworkDevice>>(emptyList()) }
     var networkScannedAt by remember { mutableStateOf<Long?>(null) }
+    var powerSnapshot by remember { mutableStateOf<PowerSnapshot?>(null) }
     val sleepTotal = (sleepHours.toIntOrNull() ?: 0) * 60 + (sleepMinutes.toIntOrNull() ?: 0)
     val sleepTotalValid = sleepTotal in 1..PingProtocol.MAX_SLEEP_MINUTES
     var refreshing by remember { mutableStateOf(false) }
@@ -312,6 +322,32 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
         networkRef.addValueEventListener(listener)
         onDispose { networkRef.removeEventListener(listener) }
+    }
+
+    DisposableEffect(database) {
+        val powerRef = database.getReference("power/latest")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (!snapshot.exists()) return
+                val cpu = snapshot.child("cpu")
+                powerSnapshot = PowerSnapshot(
+                    reportedAt = snapshot.child("reportedAt").getValue(Long::class.java),
+                    usagePercent = cpu.child("usagePercent").getValue(Double::class.java),
+                    tempC = cpu.child("tempC").getValue(Long::class.java),
+                    packageWatts = cpu.child("packageWatts").getValue(Double::class.java),
+                    coreFreqMhz = cpu.child("coreFreqMhz").children.mapNotNull {
+                        it.getValue(Long::class.java)
+                    },
+                    batteryPercent = snapshot.child("battery/percent").getValue(Long::class.java),
+                )
+            }
+
+            override fun onCancelled(databaseError: DatabaseError) {
+                // Leave the last known snapshot visible; this is a read-only side panel.
+            }
+        }
+        powerRef.addValueEventListener(listener)
+        onDispose { powerRef.removeEventListener(listener) }
     }
 
     val request = sleepRequest
@@ -565,6 +601,36 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                                     )
                                 }
                             }
+                        }
+                    }
+                }
+
+                powerSnapshot?.let { power ->
+                    GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Amber, cornerRadius = 22.dp) {
+                        Text(
+                            "Power & thermal",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        power.reportedAt?.let { reportedAt ->
+                            Text(
+                                "Last report: ${formatRelativeTime(reportedAt)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = LocalGlassPalette.current.inkMuted,
+                            )
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            power.usagePercent?.let { Text("CPU usage: ${"%.1f".format(it)}%") }
+                            power.tempC?.let { Text("CPU temperature: $it°C") }
+                            power.packageWatts?.let { Text("Package power: ${"%.1f".format(it)} W") }
+                            if (power.coreFreqMhz.isNotEmpty()) {
+                                val avgGhz = power.coreFreqMhz.average() / 1000
+                                Text(
+                                    "Core frequency (avg): ${"%.1f".format(avgGhz)} GHz " +
+                                        "(${power.coreFreqMhz.size} cores)",
+                                )
+                            }
+                            power.batteryPercent?.let { Text("Battery: $it%") }
                         }
                     }
                 }
