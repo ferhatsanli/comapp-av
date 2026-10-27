@@ -43,12 +43,15 @@
       "latest": {
         ".read": "auth != null && auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462'",
         ".write": "auth != null && auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1'",
-        ".validate": "newData.hasChildren(['reportedAt', 'cpu'])",
+        ".validate": "newData.hasChildren(['reportedAt'])",
         "reportedAt": { ".validate": "newData.isNumber() && newData.val() <= now" },
         "cpu": {
           "tempC": { ".validate": "newData.isNumber() && newData.val() >= -40 && newData.val() <= 150" },
           "usagePercent": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
           "packageWatts": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500" },
+          "coreWatts": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500" },
+          "uncoreWatts": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500" },
+          "dramWatts": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500" },
           "coreFreqMhz": {
             "$core": {
               ".validate": "$core.matches(/^cpu[0-9]+$/) && newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000"
@@ -58,6 +61,11 @@
         },
         "battery": {
           "percent": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
+          "$other": { ".validate": false }
+        },
+        "system": {
+          "fanRpm": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 20000" },
+          "ecTempC": { ".validate": "newData.isNumber() && newData.val() >= -40 && newData.val() <= 150" },
           "$other": { ".validate": false }
         },
         "$other": { ".validate": false }

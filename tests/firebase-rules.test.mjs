@@ -321,7 +321,8 @@ try {
   });
   await check("Only the Pi writes /power/latest, and only Android reads it, with required shape", async () => {
     await assertFails(get(ref(anonymousDb, "power/latest")));
-    await assertFails(set(ref(piDb, "power/latest"), {
+    // cpu is optional now - a reportedAt-only write is a valid (if useless) shape.
+    await assertSucceeds(set(ref(piDb, "power/latest"), {
       reportedAt: Date.now(),
     }));
     await assertFails(set(ref(piDb, "power/latest"), {
@@ -344,6 +345,18 @@ try {
       cpu: { usagePercent: 12.3 },
       battery: { percent: 150 },
     }));
+    await assertFails(set(ref(piDb, "power/latest"), {
+      reportedAt: Date.now(),
+      cpu: { coreWatts: -1 },
+    }));
+    await assertFails(set(ref(piDb, "power/latest"), {
+      reportedAt: Date.now(),
+      system: { fanRpm: 2400, ecTempC: 42, note: "x" },
+    }));
+    await assertFails(set(ref(piDb, "power/latest"), {
+      reportedAt: Date.now(),
+      system: { fanRpm: -5 },
+    }));
     await assertFails(set(ref(androidDb, "power/latest"), {
       reportedAt: Date.now(),
       cpu: { usagePercent: 12.3 },
@@ -355,16 +368,25 @@ try {
         tempC: 55,
         usagePercent: 12.3,
         packageWatts: 9.4,
+        coreWatts: 4.1,
+        uncoreWatts: 1.2,
+        dramWatts: 0.3,
         coreFreqMhz: { "cpu0": 1800, "cpu1": 2200 },
       },
       battery: { percent: 87 },
+      system: { fanRpm: 2400, ecTempC: 42 },
     }));
     await assertSucceeds(set(ref(piDb, "power/latest"), {
       reportedAt: Date.now(),
       cpu: { usagePercent: 5 },
     }));
+    // cpu is optional now: a snapshot with only system/battery data is still valid shape.
+    await assertSucceeds(set(ref(piDb, "power/latest"), {
+      reportedAt: Date.now(),
+      system: { fanRpm: 2200 },
+    }));
     const latest = await assertSucceeds(get(ref(androidDb, "power/latest")));
-    assert.equal(latest.child("cpu/usagePercent").val(), 5);
+    assert.equal(latest.child("system/fanRpm").val(), 2200);
     await assertFails(get(ref(piDb, "power/latest")));
   });
 } finally {
