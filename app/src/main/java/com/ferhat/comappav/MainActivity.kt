@@ -83,6 +83,12 @@ private data class PowerSnapshot(
 private const val DATABASE_URL =
     "https://comapp-av-default-rtdb.europe-west1.firebasedatabase.app"
 
+// Rough, all-in Dutch household electricity price (energy tax + VAT included),
+// checked 2026-10-27 against the daily average on energievergelijk.nl. This is
+// only for a ballpark "what does this cost" estimate next to the live reading,
+// not a real tariff — edit this constant if you want a sharper number.
+private const val ELECTRICITY_PRICE_EUR_PER_KWH = 0.324
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -622,7 +628,16 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             power.usagePercent?.let { Text("CPU usage: ${"%.1f".format(it)}%") }
                             power.tempC?.let { Text("CPU temperature: $it°C") }
-                            power.packageWatts?.let { Text("Package power: ${"%.1f".format(it)} W") }
+                            power.packageWatts?.let { watts ->
+                                Text("Package power: ${"%.1f".format(watts)} W")
+                                val costPerHourEur = watts / 1000.0 * ELECTRICITY_PRICE_EUR_PER_KWH
+                                Text(
+                                    "Estimated cost: ${"%.2f".format(costPerHourEur * 100)} ¢/hour " +
+                                        "(~€${"%.2f".format(costPerHourEur * 24)}/day at this rate)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = LocalGlassPalette.current.inkMuted,
+                                )
+                            }
                             if (power.coreFreqMhz.isNotEmpty()) {
                                 val avgGhz = power.coreFreqMhz.average() / 1000
                                 Text(
