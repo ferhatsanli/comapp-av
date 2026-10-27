@@ -69,6 +69,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 private data class SleepRequest(val minutes: Int?)
 
+private data class NetworkDevice(val mac: String, val ip: String, val name: String)
+
 private const val DATABASE_URL =
     "https://comapp-av-default-rtdb.europe-west1.firebasedatabase.app"
 
@@ -199,6 +201,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var sleepRequest by remember { mutableStateOf<SleepRequest?>(null) }
     var sleepHours by rememberSaveable { mutableStateOf("0") }
     var sleepMinutes by rememberSaveable { mutableStateOf("30") }
+    var networkDevices by remember { mutableStateOf<List<NetworkDevice>>(emptyList()) }
+    var networkScannedAt by remember { mutableStateOf<Long?>(null) }
     val sleepTotal = (sleepHours.toIntOrNull() ?: 0) * 60 + (sleepMinutes.toIntOrNull() ?: 0)
     val sleepTotalValid = sleepTotal in 1..PingProtocol.MAX_SLEEP_MINUTES
     var refreshing by remember { mutableStateOf(false) }
@@ -287,6 +291,27 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
             commandRef.addValueEventListener(listener)
             onDispose { commandRef.removeEventListener(listener) }
         }
+    }
+
+    DisposableEffect(database) {
+        val networkRef = database.getReference("network/latest")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                networkScannedAt = snapshot.child("scannedAt").getValue(Long::class.java)
+                networkDevices = snapshot.child("devices").children.mapNotNull { device ->
+                    val mac = device.key ?: return@mapNotNull null
+                    val ip = device.child("ip").getValue(String::class.java) ?: return@mapNotNull null
+                    val name = device.child("name").getValue(String::class.java) ?: return@mapNotNull null
+                    NetworkDevice(mac = mac, ip = ip, name = name)
+                }.sortedBy { it.name.lowercase() }
+            }
+
+            override fun onCancelled(databaseError: DatabaseError) {
+                // Leave the last known device list visible; this is a read-only side panel.
+            }
+        }
+        networkRef.addValueEventListener(listener)
+        onDispose { networkRef.removeEventListener(listener) }
     }
 
     val request = sleepRequest
@@ -497,6 +522,53 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     )
                 }
 
+                GlassCommandCard(
+                    title = "Scan",
+                    tag = PingProtocol.SCAN_ACTION,
+                    description = "See who is on the home network right now.",
+                    accent = GlassColors.Neutral,
+                ) {
+                    GlassButton(
+                        text = "Send SCAN",
+                        accent = GlassColors.Neutral,
+                        enabled = canSend,
+                        loading = sending && commandAction == PingProtocol.SCAN_ACTION,
+                        onClick = { sendCommand(PingProtocol.SCAN_ACTION, PingProtocol.scanCommand(user.uid)) },
+                    )
+                }
+
+                if (networkDevices.isNotEmpty()) {
+                    GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Neutral, cornerRadius = 22.dp) {
+                        Text(
+                            "On the network",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        networkScannedAt?.let { scannedAt ->
+                            Text(
+                                "Last scan: ${formatRelativeTime(scannedAt)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = LocalGlassPalette.current.inkMuted,
+                            )
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            networkDevices.forEach { device ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Text(device.name, fontWeight = FontWeight.Medium)
+                                    Text(
+                                        device.ip,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = LocalGlassPalette.current.inkFaint,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if (!authorized) {
                     GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Red, cornerRadius = 22.dp) {
                         Text(
@@ -531,6 +603,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                                     when (commandAction) {
                                         PingProtocol.SPEAK_ACTION -> "The agent spoke your text."
                                         PingProtocol.SLEEP_ACTION -> "The laptop is going to sleep."
+                                        PingProtocol.SCAN_ACTION -> "Network scan complete."
                                         else -> "PONG received from the agent."
                                     },
                                 )
@@ -557,4 +630,14 @@ private fun statusColor(status: String?): Color = when (status) {
     "SUCCESS" -> GlassColors.Green
     "FAILED" -> GlassColors.Red
     else -> GlassColors.Amber
+}
+
+private fun formatRelativeTime(epochMillis: Long): String {
+    val seconds = (System.currentTimeMillis() - epochMillis) / 1000
+    return when {
+        seconds < 60 -> "just now"
+        seconds < 3_600 -> "${seconds / 60} min ago"
+        seconds < 86_400 -> "${seconds / 3_600} h ago"
+        else -> "${seconds / 86_400} d ago"
+    }
 }

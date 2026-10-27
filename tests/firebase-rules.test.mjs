@@ -255,6 +255,70 @@ try {
     const done = await assertSucceeds(get(command(androidDb, "sleep-80")));
     assert.equal(done.val().durationMinutes, 80);
   });
+  await check("SCAN carries no text and completes with SCANNED", async () => {
+    await assertSucceeds(set(command(androidDb, "scan-ok"), {
+      action: "SCAN", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+    }));
+    await assertFails(set(command(androidDb, "scan-text"), {
+      action: "SCAN", senderUid: ANDROID, targetUid: PI, status: "PENDING", text: "hi",
+    }));
+    await assertFails(set(command(androidDb, "scan-success"), {
+      action: "SCAN", senderUid: ANDROID, targetUid: PI, status: "SUCCESS", result: "SCANNED",
+    }));
+
+    await assertSucceeds(update(command(piDb, "scan-ok"), {
+      status: "PROCESSING", processingAt: Date.now(),
+    }));
+    await assertFails(update(command(piDb, "scan-ok"), { status: "SUCCESS", result: "PONG", processingAt: null }));
+    await assertFails(update(command(piDb, "scan-ok"), { status: "SUCCESS", result: "SPOKEN", processingAt: null }));
+    await assertSucceeds(update(command(piDb, "scan-ok"), {
+      status: "SUCCESS", result: "SCANNED", processingAt: null,
+    }));
+    const done = await assertSucceeds(get(command(androidDb, "scan-ok")));
+    assert.equal(done.val().result, "SCANNED");
+
+    // Other actions must still reject SCANNED as their result.
+    await assertSucceeds(set(command(androidDb, "ping-not-scanned"), {
+      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+    }));
+    await assertSucceeds(update(command(piDb, "ping-not-scanned"), {
+      status: "PROCESSING", processingAt: Date.now(),
+    }));
+    await assertFails(update(command(piDb, "ping-not-scanned"), { status: "SUCCESS", result: "SCANNED", processingAt: null }));
+  });
+  await check("Only the Pi writes /network/latest, and only Android reads it, with required shape", async () => {
+    await assertFails(get(ref(androidDb, "network/latest")));
+    await assertFails(set(ref(piDb, "network/latest"), {
+      scannedAt: Date.now(),
+    }));
+    await assertFails(set(ref(piDb, "network/latest"), {
+      scannedAt: Date.now(),
+      devices: { "AA:BB:CC:DD:EE:FF": { ip: "192.168.1.10" } },
+    }));
+    await assertFails(set(ref(piDb, "network/latest"), {
+      scannedAt: Date.now(),
+      devices: { "not-a-mac": { ip: "192.168.1.10", name: "Phone" } },
+    }));
+    await assertFails(set(ref(piDb, "network/latest"), {
+      scannedAt: Date.now(),
+      devices: { "AA:BB:CC:DD:EE:FF": { ip: "192.168.1.10", name: "Phone", note: "x" } },
+    }));
+    await assertFails(set(ref(androidDb, "network/latest"), {
+      scannedAt: Date.now(),
+      devices: {},
+    }));
+
+    await assertSucceeds(set(ref(piDb, "network/latest"), {
+      scannedAt: Date.now(),
+      devices: {
+        "AA:BB:CC:DD:EE:FF": { ip: "192.168.1.10", name: "Fedora" },
+        "11:22:33:44:55:66": { ip: "192.168.1.20", name: "Unknown" },
+      },
+    }));
+    const latest = await assertSucceeds(get(ref(androidDb, "network/latest")));
+    assert.equal(latest.child("devices/AA:BB:CC:DD:EE:FF/name").val(), "Fedora");
+    await assertFails(get(ref(piDb, "network/latest")));
+  });
 } finally {
   await testEnv.cleanup();
 }

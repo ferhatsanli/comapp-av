@@ -8,11 +8,19 @@ internal object PingProtocol {
     const val ACTION = "PING"
     const val SPEAK_ACTION = "SPEAK"
     const val SLEEP_ACTION = "SLEEP"
+    const val SCAN_ACTION = "SCAN"
     const val MAX_SLEEP_MINUTES = 1440
     const val MAX_SPEAK_LENGTH = 300
 
     fun pendingCommand(senderUid: String): Map<String, String> = mapOf(
         "action" to ACTION,
+        "senderUid" to senderUid,
+        "targetUid" to PI_UID,
+        "status" to "PENDING",
+    )
+
+    fun scanCommand(senderUid: String): Map<String, String> = mapOf(
+        "action" to SCAN_ACTION,
         "senderUid" to senderUid,
         "targetUid" to PI_UID,
         "status" to "PENDING",
