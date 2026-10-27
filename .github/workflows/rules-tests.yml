@@ -6,7 +6,7 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   rules:
@@ -24,4 +24,18 @@ jobs:
           java-version: 21
       - run: npm ci
       - run: npm install --global firebase-tools@13
-      - run: npm run test:firebase-rules
+      - name: run tests (output captured for debugging)
+        run: npm run test:firebase-rules > /tmp/rules-test.log 2>&1 || echo "TESTS_FAILED=1" >> "$GITHUB_ENV"
+      - name: post the log as a commit comment on failure
+        if: env.TESTS_FAILED == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 -c "
+import json
+with open('/tmp/rules-test.log') as f:
+    body = f.read()[-60000:]
+print(json.dumps({'body': body}))
+" > /tmp/comment.json
+          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" --input /tmp/comment.json
+          exit 1
