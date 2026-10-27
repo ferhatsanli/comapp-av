@@ -287,7 +287,7 @@ try {
     await assertFails(update(command(piDb, "ping-not-scanned"), { status: "SUCCESS", result: "SCANNED", processingAt: null }));
   });
   await check("Only the Pi writes /network/latest, and only Android reads it, with required shape", async () => {
-    await assertFails(get(ref(androidDb, "network/latest")));
+    await assertFails(get(ref(anonymousDb, "network/latest")));
     await assertFails(set(ref(piDb, "network/latest"), {
       scannedAt: Date.now(),
     }));
