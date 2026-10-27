@@ -219,6 +219,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var commandAction by remember { mutableStateOf(PingProtocol.ACTION) }
     var speakText by rememberSaveable { mutableStateOf("") }
     var sleepRequest by remember { mutableStateOf<SleepRequest?>(null) }
+    var shutdownRequested by remember { mutableStateOf(false) }
     var sleepHours by rememberSaveable { mutableStateOf("0") }
     var sleepMinutes by rememberSaveable { mutableStateOf("30") }
     var networkDevices by remember { mutableStateOf<List<NetworkDevice>>(emptyList()) }
@@ -390,6 +391,31 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
             },
             dismissButton = {
                 TextButton(onClick = { sleepRequest = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (shutdownRequested) {
+        AlertDialog(
+            onDismissRequest = { shutdownRequested = false },
+            title = { Text("Shut the laptop down completely?") },
+            text = {
+                Text(
+                    "It powers off immediately, with no delay. Unlike Sleep, it will " +
+                        "NOT wake up on its own - you need physical access to turn it back on.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    shutdownRequested = false
+                    sendCommand(
+                        PingProtocol.SHUTDOWN_ACTION,
+                        PingProtocol.shutdownCommand(user.uid),
+                    )
+                }) { Text("Shut down", color = GlassColors.Red) }
+            },
+            dismissButton = {
+                TextButton(onClick = { shutdownRequested = false }) { Text("Cancel") }
             },
         )
     }
@@ -590,6 +616,21 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     )
                 }
 
+                GlassCommandCard(
+                    title = "Shutdown",
+                    tag = PingProtocol.SHUTDOWN_ACTION,
+                    description = "Power the laptop off completely. No automatic wake-up - physical access is needed to turn it back on.",
+                    accent = GlassColors.Red,
+                ) {
+                    GlassButton(
+                        text = "Shut down now",
+                        accent = GlassColors.Red,
+                        enabled = canSend,
+                        loading = sending && commandAction == PingProtocol.SHUTDOWN_ACTION,
+                        onClick = { shutdownRequested = true },
+                    )
+                }
+
                 if (networkDevices.isNotEmpty()) {
                     GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Neutral, cornerRadius = 22.dp) {
                         Text(
@@ -716,6 +757,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                                         PingProtocol.SPEAK_ACTION -> "The agent spoke your text."
                                         PingProtocol.SLEEP_ACTION -> "The laptop is going to sleep."
                                         PingProtocol.SCAN_ACTION -> "Network scan complete."
+                                        PingProtocol.SHUTDOWN_ACTION -> "The laptop is powering off now."
                                         else -> "PONG received from the agent."
                                     },
                                 )

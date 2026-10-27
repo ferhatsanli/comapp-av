@@ -255,6 +255,43 @@ try {
     const done = await assertSucceeds(get(command(androidDb, "sleep-80")));
     assert.equal(done.val().durationMinutes, 80);
   });
+  await check("SHUTDOWN needs a fresh server timestamp, carries no text/duration, and completes with POWERING_OFF", async () => {
+    const shutdown = (extra = {}) => ({
+      action: "SHUTDOWN", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+      createdAt: serverTimestamp(), ...extra,
+    });
+    await assertSucceeds(set(command(androidDb, "shutdown-ok"), shutdown()));
+    await assertFails(set(command(androidDb, "shutdown-no-time"), {
+      action: "SHUTDOWN", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+    }));
+    await assertFails(set(command(androidDb, "shutdown-old"), shutdown({ createdAt: Date.now() - 120_000 })));
+    await assertFails(set(command(androidDb, "shutdown-future"), shutdown({ createdAt: Date.now() + 3_600_000 })));
+    await assertFails(set(command(androidDb, "shutdown-text"), shutdown({ text: "hello" })));
+    await assertFails(set(command(androidDb, "shutdown-duration"), shutdown({ durationMinutes: 10 })));
+    await assertFails(set(command(androidDb, "shutdown-extra"), shutdown({ delay: 5 })));
+
+    await assertSucceeds(update(command(piDb, "shutdown-ok"), {
+      status: "PROCESSING", processingAt: Date.now(),
+    }));
+    await assertFails(update(command(piDb, "shutdown-ok"), { createdAt: Date.now() }));
+    await assertFails(update(command(piDb, "shutdown-ok"), { status: "SUCCESS", result: "SLEEPING", processingAt: null }));
+    await assertFails(update(command(piDb, "shutdown-ok"), { status: "SUCCESS", result: "SCANNED", processingAt: null }));
+    await assertSucceeds(update(command(piDb, "shutdown-ok"), {
+      status: "SUCCESS", result: "POWERING_OFF", processingAt: null,
+    }));
+    const done = await assertSucceeds(get(command(androidDb, "shutdown-ok")));
+    assert.equal(done.val().result, "POWERING_OFF");
+    assert.equal(typeof done.val().createdAt, "number");
+
+    // Other actions must still reject POWERING_OFF as their result.
+    await assertSucceeds(set(command(androidDb, "scan-not-poweroff"), {
+      action: "SCAN", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+    }));
+    await assertSucceeds(update(command(piDb, "scan-not-poweroff"), {
+      status: "PROCESSING", processingAt: Date.now(),
+    }));
+    await assertFails(update(command(piDb, "scan-not-poweroff"), { status: "SUCCESS", result: "POWERING_OFF", processingAt: null }));
+  });
   await check("SCAN carries no text and completes with SCANNED", async () => {
     await assertSucceeds(set(command(androidDb, "scan-ok"), {
       action: "SCAN", senderUid: ANDROID, targetUid: PI, status: "PENDING",

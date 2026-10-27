@@ -9,6 +9,7 @@ internal object PingProtocol {
     const val SPEAK_ACTION = "SPEAK"
     const val SLEEP_ACTION = "SLEEP"
     const val SCAN_ACTION = "SCAN"
+    const val SHUTDOWN_ACTION = "SHUTDOWN"
     const val MAX_SLEEP_MINUTES = 1440
     const val MAX_SPEAK_LENGTH = 300
 
@@ -48,6 +49,15 @@ internal object PingProtocol {
         }
         return command
     }
+
+    /** Powers the laptop off immediately - no grace delay, and no automatic wake-up. */
+    fun shutdownCommand(senderUid: String): Map<String, Any> = mapOf(
+        "action" to SHUTDOWN_ACTION,
+        "senderUid" to senderUid,
+        "targetUid" to PI_UID,
+        "status" to "PENDING",
+        "createdAt" to ServerValue.TIMESTAMP,
+    )
 
     /** 80 -> "1 h 20 min", 120 -> "2 h", 2 -> "2 min". */
     fun formatDuration(totalMinutes: Int): String {
