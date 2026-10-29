@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -23,7 +24,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -52,8 +52,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -62,6 +66,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
@@ -159,11 +164,13 @@ private fun SignInScreen(auth: FirebaseAuth) {
     var error by remember { mutableStateOf<String?>(null) }
 
     Scaffold(containerColor = Color.Transparent, contentColor = LocalGlassPalette.current.ink) { padding ->
+        val scrollState = rememberScrollState()
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
+                .verticalEdgeFade(scrollState)
                 .padding(24.dp),
             verticalArrangement = Arrangement.Center,
         ) {
@@ -576,43 +583,20 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 color = LocalGlassPalette.current.inkMuted,
             )
             val chipScroll = rememberScrollState()
-            val fadeColor = LocalGlassPalette.current.frostMid
-            // GlassChip is a fixed 32.dp tall, so the Box can be given that height explicitly
-            // rather than inferring it - which keeps the fillMaxHeight() fade overlays below
-            // well-defined instead of racing the Row's own intrinsic measurement.
-            Box(Modifier.fillMaxWidth().height(32.dp)) {
-                Row(
-                    modifier = Modifier.horizontalScroll(chipScroll),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    listOf(2, 10, 30, 60, 120).forEach { minutes ->
-                        GlassChip(
-                            text = PingProtocol.formatDuration(minutes),
-                            onClick = {
-                                sleepHours = (minutes / 60).toString()
-                                sleepMinutes = (minutes % 60).toString()
-                            },
-                        )
-                    }
-                }
-                // Edge fades hint that the chip row scrolls further; each one only shows
-                // while there is actually more content hidden on that side.
-                if (chipScroll.value > 0) {
-                    Box(
-                        Modifier
-                            .align(Alignment.CenterStart)
-                            .fillMaxHeight()
-                            .width(20.dp)
-                            .background(Brush.horizontalGradient(listOf(fadeColor, Color.Transparent))),
-                    )
-                }
-                if (chipScroll.value < chipScroll.maxValue) {
-                    Box(
-                        Modifier
-                            .align(Alignment.CenterEnd)
-                            .fillMaxHeight()
-                            .width(20.dp)
-                            .background(Brush.horizontalGradient(listOf(Color.Transparent, fadeColor))),
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(chipScroll)
+                    .horizontalEdgeFade(chipScroll),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                listOf(2, 10, 30, 60, 120).forEach { minutes ->
+                    GlassChip(
+                        text = PingProtocol.formatDuration(minutes),
+                        onClick = {
+                            sleepHours = (minutes / 60).toString()
+                            sleepMinutes = (minutes % 60).toString()
+                        },
                     )
                 }
             }
@@ -1035,11 +1019,13 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 Row(Modifier.fillMaxSize()) {
                     sidebarNav()
                     verticalDivider()
+                    val middleScroll = rememberScrollState()
                     Column(
                         modifier = Modifier
                             .fillMaxHeight()
                             .width(280.dp)
-                            .verticalScroll(rememberScrollState())
+                            .verticalScroll(middleScroll)
+                            .verticalEdgeFade(middleScroll)
                             .padding(horizontal = 16.dp, vertical = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
@@ -1047,11 +1033,13 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                         categoryContent()
                     }
                     verticalDivider()
+                    val infoScroll = rememberScrollState()
                     Column(
                         modifier = Modifier
                             .fillMaxHeight()
                             .weight(1f)
-                            .verticalScroll(rememberScrollState())
+                            .verticalScroll(infoScroll)
+                            .verticalEdgeFade(infoScroll)
                             .padding(horizontal = 16.dp, vertical = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
@@ -1063,10 +1051,12 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     }
                 }
             } else {
+                val portraitScroll = rememberScrollState()
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(portraitScroll)
+                        .verticalEdgeFade(portraitScroll)
                         .padding(horizontal = 20.dp, vertical = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp),
                 ) {
@@ -1104,3 +1094,51 @@ private fun formatRelativeTime(epochMillis: Long): String {
         else -> "${seconds / 86_400} d ago"
     }
 }
+
+// A true alpha fade at the edges of a scrollable area (masking what's actually drawn, via
+// BlendMode.DstIn) rather than painting an approximate-color overlay on top - so it looks right
+// no matter what's behind it. Each edge only fades while there is more content hidden that way.
+// CompositingStrategy.Offscreen renders the content to a buffer first so the mask only cuts into
+// this content, not whatever is drawn behind it in the rest of the screen.
+
+private fun Modifier.verticalEdgeFade(state: ScrollState, edgeSize: Dp = 28.dp): Modifier =
+    graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen).drawWithContent {
+        drawContent()
+        val fadePx = edgeSize.toPx()
+        if (state.value > 0) {
+            drawRect(
+                brush = Brush.verticalGradient(colors = listOf(Color.Transparent, Color.Black), endY = fadePx),
+                blendMode = BlendMode.DstIn,
+            )
+        }
+        if (state.value < state.maxValue) {
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color.Black, Color.Transparent),
+                    startY = size.height - fadePx,
+                ),
+                blendMode = BlendMode.DstIn,
+            )
+        }
+    }
+
+private fun Modifier.horizontalEdgeFade(state: ScrollState, edgeSize: Dp = 20.dp): Modifier =
+    graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen).drawWithContent {
+        drawContent()
+        val fadePx = edgeSize.toPx()
+        if (state.value > 0) {
+            drawRect(
+                brush = Brush.horizontalGradient(colors = listOf(Color.Transparent, Color.Black), endX = fadePx),
+                blendMode = BlendMode.DstIn,
+            )
+        }
+        if (state.value < state.maxValue) {
+            drawRect(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(Color.Black, Color.Transparent),
+                    startX = size.width - fadePx,
+                ),
+                blendMode = BlendMode.DstIn,
+            )
+        }
+    }
