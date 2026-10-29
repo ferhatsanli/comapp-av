@@ -129,6 +129,49 @@ fun GlassChip(
     }
 }
 
+/** Selectable pill for a row of category tabs; [selected] fills it with [accent]. */
+@Composable
+fun GlassCategoryTab(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    accent: Color = GlassColors.Blue,
+) {
+    val palette = LocalGlassPalette.current
+    Box(
+        modifier
+            .height(36.dp)
+            .clip(ChipShape)
+            .drawBehind {
+                if (selected) {
+                    drawRect(
+                        Brush.verticalGradient(
+                            listOf(accent.copy(alpha = palette.buttonTop), accent.copy(alpha = palette.buttonBottom)),
+                        ),
+                    )
+                } else {
+                    drawRect(palette.chipFill)
+                }
+            }
+            .border(
+                1.dp,
+                Brush.linearGradient(listOf(palette.rimTop, palette.rimBottom)),
+                ChipShape,
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            color = if (selected) Color.White else palette.ink,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
 /** Text field colors that stay readable on glass in both themes. */
 @Composable
 fun glassTextFieldColors(): TextFieldColors {

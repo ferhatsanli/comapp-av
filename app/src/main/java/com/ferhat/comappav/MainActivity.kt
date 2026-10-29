@@ -2,10 +2,18 @@ package com.ferhat.comappav
 
 import android.content.res.Configuration
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,7 +54,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -60,6 +71,7 @@ import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
 import com.ferhat.comappav.ui.glass.GlassButton
 import com.ferhat.comappav.ui.glass.GlassCard
+import com.ferhat.comappav.ui.glass.GlassCategoryTab
 import com.ferhat.comappav.ui.glass.GlassChip
 import com.ferhat.comappav.ui.glass.GlassColors
 import com.ferhat.comappav.ui.glass.GlassCommandCard
@@ -76,6 +88,13 @@ import kotlinx.coroutines.withTimeoutOrNull
 private data class SleepRequest(val minutes: Int?)
 
 private data class NetworkDevice(val mac: String, val ip: String, val name: String)
+
+/** Command-card groups shown under the category tabs; ordinal order drives the slide direction. */
+private enum class Category(val label: String, val accent: Color) {
+    COMMANDS("Commands", GlassColors.Blue),
+    POWER("Power", GlassColors.Amber),
+    NETWORK("Network", GlassColors.Neutral),
+}
 
 private data class PowerSnapshot(
     val reportedAt: Long?,
@@ -232,6 +251,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var sleepRequest by remember { mutableStateOf<SleepRequest?>(null) }
     var shutdownRequested by remember { mutableStateOf(false) }
     var requestedPowerMode by remember { mutableStateOf<String?>(null) }
+    var selectedCategory by remember { mutableStateOf(Category.COMMANDS) }
     var sleepHours by rememberSaveable { mutableStateOf("0") }
     var sleepMinutes by rememberSaveable { mutableStateOf("30") }
     var networkDevices by remember { mutableStateOf<List<NetworkDevice>>(emptyList()) }
@@ -649,14 +669,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 "the lowest power draw, or switch back to normal if you need it responsive.",
             accent = GlassColors.Amber,
         ) {
-            currentMode?.let {
-                Text(
-                    "Current: ${if (it == PingProtocol.MODE_POWERSAVE) "Power save" else "Performance"}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = LocalGlassPalette.current.inkMuted,
-                )
-                Spacer(Modifier.height(4.dp))
-            }
+            // The current mode is shown in the "System Info" card; here it only decides
+            // which button looks pressed-in (prominent).
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 GlassButton(
                     text = "Performance",
@@ -694,6 +708,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
 
     val networkCard: @Composable () -> Unit = {
         if (networkDevices.isNotEmpty()) {
+            val clipboard = LocalClipboardManager.current
+            val context = LocalContext.current
             GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Neutral, cornerRadius = 22.dp) {
                 Text(
                     "On the network",
@@ -707,10 +723,24 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                         color = LocalGlassPalette.current.inkMuted,
                     )
                 }
+                Text(
+                    "Tap a device to copy its IP address.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = LocalGlassPalette.current.inkFaint,
+                )
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     networkDevices.forEach { device ->
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    clipboard.setText(AnnotatedString(device.ip))
+                                    Toast.makeText(
+                                        context,
+                                        "Copied ${device.ip}",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                },
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Text(device.name, fontWeight = FontWeight.Medium)
@@ -726,11 +756,69 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
     }
 
-    val powerCard: @Composable () -> Unit = {
+    val categoryTabs: @Composable () -> Unit = {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Category.entries.forEach { category ->
+                GlassCategoryTab(
+                    text = category.label,
+                    selected = selectedCategory == category,
+                    accent = category.accent,
+                    onClick = { selectedCategory = category },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+
+    // The deeper/more specific a category is (further right in the tab row), the more it
+    // slides in from the right; moving back toward "Commands" slides in from the left.
+    val categoryContent: @Composable () -> Unit = {
+        AnimatedContent(
+            targetState = selectedCategory,
+            transitionSpec = {
+                val forward = targetState.ordinal > initialState.ordinal
+                (
+                    slideInHorizontally(initialOffsetX = { width -> if (forward) width else -width }) +
+                        fadeIn()
+                    ) togetherWith (
+                    slideOutHorizontally(targetOffsetX = { width -> if (forward) -width else width }) +
+                        fadeOut()
+                    )
+            },
+            label = "category",
+            modifier = Modifier.fillMaxWidth(),
+        ) { category ->
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                when (category) {
+                    Category.COMMANDS -> {
+                        pingCard()
+                        speakCard()
+                    }
+                    Category.POWER -> {
+                        sleepCard()
+                        shutdownCard()
+                        powerModeCard()
+                    }
+                    Category.NETWORK -> {
+                        scanCard()
+                        networkCard()
+                    }
+                }
+            }
+        }
+    }
+
+    val systemInfoCard: @Composable () -> Unit = {
         powerSnapshot?.let { power ->
             GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Amber, cornerRadius = 22.dp) {
                 Text(
-                    "Power & thermal",
+                    "System Info",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -742,6 +830,14 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     )
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    power.powerMode?.let {
+                        val label = when (it) {
+                            PingProtocol.MODE_POWERSAVE -> "Power save"
+                            PingProtocol.MODE_PERFORMANCE -> "Performance"
+                            else -> "Unknown"
+                        }
+                        Text("Power mode: $label", fontWeight = FontWeight.Medium)
+                    }
                     power.usagePercent?.let { Text("CPU usage: ${"%.1f".format(it)}%") }
                     power.tempC?.let { Text("CPU temperature: $it°C") }
                     power.packageWatts?.let { watts ->
@@ -865,12 +961,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
                         header()
-                        pingCard()
-                        speakCard()
-                        sleepCard()
-                        scanCard()
-                        shutdownCard()
-                        powerModeCard()
+                        categoryTabs()
+                        categoryContent()
                     }
                     Box(
                         Modifier
@@ -895,8 +987,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
                         connectionCard()
-                        networkCard()
-                        powerCard()
+                        systemInfoCard()
                         authorizedWarning()
                         latestCommandCard()
                         errorText()
@@ -912,14 +1003,9 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 ) {
                     header()
                     connectionCard()
-                    pingCard()
-                    speakCard()
-                    sleepCard()
-                    scanCard()
-                    shutdownCard()
-                    powerModeCard()
-                    networkCard()
-                    powerCard()
+                    categoryTabs()
+                    categoryContent()
+                    systemInfoCard()
                     authorizedWarning()
                     latestCommandCard()
                     errorText()
