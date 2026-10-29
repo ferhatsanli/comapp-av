@@ -4,10 +4,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -129,20 +134,78 @@ fun GlassChip(
     }
 }
 
-/** Selectable pill for a row of category tabs; [selected] fills it with [accent]. */
+/**
+ * Flat frosted dock for navigation - a bottom bar in portrait, a sidebar in landscape. Lighter
+ * than [GlassCard]: no blur backdrop or floating shadow, since it's a fixed dock, not a card
+ * that floats over the aurora background.
+ */
 @Composable
-fun GlassCategoryTab(
-    text: String,
+fun GlassNavSurface(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val palette = LocalGlassPalette.current
+    Box(
+        modifier
+            .background(
+                Brush.verticalGradient(listOf(palette.frostTop, palette.frostMid, palette.frostBottom)),
+            )
+            .border(
+                width = 1.dp,
+                brush = Brush.linearGradient(listOf(palette.rimTop, palette.rimBottom)),
+            ),
+    ) {
+        content()
+    }
+}
+
+/** One destination in a [GlassNavSurface] bottom bar: a small accent bar above the label. */
+@Composable
+fun GlassBottomNavItem(
+    label: String,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     accent: Color = GlassColors.Blue,
 ) {
     val palette = LocalGlassPalette.current
-    Box(
+    Column(
         modifier
-            .height(36.dp)
-            .clip(ChipShape)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier
+                .size(width = 28.dp, height = 3.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(if (selected) accent else Color.Transparent),
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = label,
+            color = if (selected) accent else palette.inkMuted,
+            fontSize = 12.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+        )
+    }
+}
+
+/** One destination in a [GlassNavSurface] sidebar - a Finder-style highlighted row. */
+@Composable
+fun GlassSidebarItem(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    accent: Color = GlassColors.Blue,
+) {
+    val palette = LocalGlassPalette.current
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
             .drawBehind {
                 if (selected) {
                     drawRect(
@@ -150,24 +213,24 @@ fun GlassCategoryTab(
                             listOf(accent.copy(alpha = palette.buttonTop), accent.copy(alpha = palette.buttonBottom)),
                         ),
                     )
-                } else {
-                    drawRect(palette.chipFill)
                 }
             }
-            .border(
-                1.dp,
-                Brush.linearGradient(listOf(palette.rimTop, palette.rimBottom)),
-                ChipShape,
-            )
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp),
-        contentAlignment = Alignment.Center,
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        Box(
+            Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(if (selected) Color.White else accent.copy(alpha = 0.55f)),
+        )
+        Spacer(Modifier.width(10.dp))
         Text(
-            text = text,
+            text = label,
             color = if (selected) Color.White else palette.ink,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
+            fontSize = 14.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
         )
     }
 }

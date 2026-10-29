@@ -69,14 +69,16 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
+import com.ferhat.comappav.ui.glass.GlassBottomNavItem
 import com.ferhat.comappav.ui.glass.GlassButton
 import com.ferhat.comappav.ui.glass.GlassCard
-import com.ferhat.comappav.ui.glass.GlassCategoryTab
 import com.ferhat.comappav.ui.glass.GlassChip
 import com.ferhat.comappav.ui.glass.GlassColors
 import com.ferhat.comappav.ui.glass.GlassCommandCard
 import com.ferhat.comappav.ui.glass.GlassFieldShape
+import com.ferhat.comappav.ui.glass.GlassNavSurface
 import com.ferhat.comappav.ui.glass.GlassScreen
+import com.ferhat.comappav.ui.glass.GlassSidebarItem
 import com.ferhat.comappav.ui.glass.LocalGlassPalette
 import com.ferhat.comappav.ui.glass.glassTextFieldColors
 import com.ferhat.comappav.ui.theme.ComAppAVTheme
@@ -573,17 +575,44 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 style = MaterialTheme.typography.labelLarge,
                 color = LocalGlassPalette.current.inkMuted,
             )
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                listOf(2, 10, 30, 60, 120).forEach { minutes ->
-                    GlassChip(
-                        text = PingProtocol.formatDuration(minutes),
-                        onClick = {
-                            sleepHours = (minutes / 60).toString()
-                            sleepMinutes = (minutes % 60).toString()
-                        },
+            val chipScroll = rememberScrollState()
+            val fadeColor = LocalGlassPalette.current.frostMid
+            // GlassChip is a fixed 32.dp tall, so the Box can be given that height explicitly
+            // rather than inferring it - which keeps the fillMaxHeight() fade overlays below
+            // well-defined instead of racing the Row's own intrinsic measurement.
+            Box(Modifier.fillMaxWidth().height(32.dp)) {
+                Row(
+                    modifier = Modifier.horizontalScroll(chipScroll),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf(2, 10, 30, 60, 120).forEach { minutes ->
+                        GlassChip(
+                            text = PingProtocol.formatDuration(minutes),
+                            onClick = {
+                                sleepHours = (minutes / 60).toString()
+                                sleepMinutes = (minutes % 60).toString()
+                            },
+                        )
+                    }
+                }
+                // Edge fades hint that the chip row scrolls further; each one only shows
+                // while there is actually more content hidden on that side.
+                if (chipScroll.value > 0) {
+                    Box(
+                        Modifier
+                            .align(Alignment.CenterStart)
+                            .fillMaxHeight()
+                            .width(20.dp)
+                            .background(Brush.horizontalGradient(listOf(fadeColor, Color.Transparent))),
+                    )
+                }
+                if (chipScroll.value < chipScroll.maxValue) {
+                    Box(
+                        Modifier
+                            .align(Alignment.CenterEnd)
+                            .fillMaxHeight()
+                            .width(20.dp)
+                            .background(Brush.horizontalGradient(listOf(Color.Transparent, fadeColor))),
                     )
                 }
             }
@@ -756,19 +785,50 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
     }
 
-    val categoryTabs: @Composable () -> Unit = {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+    // Portrait: a fixed bottom navigation bar, pinned outside the scrolling content.
+    val bottomNav: @Composable () -> Unit = {
+        GlassNavSurface(Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+            ) {
+                Category.entries.forEach { category ->
+                    GlassBottomNavItem(
+                        label = category.label,
+                        selected = selectedCategory == category,
+                        accent = category.accent,
+                        onClick = { selectedCategory = category },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+
+    // Landscape: a Finder-style sidebar, since there's already a side-by-side layout - this
+    // reads as browsing into a folder rather than switching a top tab strip.
+    val sidebarNav: @Composable () -> Unit = {
+        GlassNavSurface(
+            Modifier
+                .fillMaxHeight()
+                .width(132.dp),
         ) {
-            Category.entries.forEach { category ->
-                GlassCategoryTab(
-                    text = category.label,
-                    selected = selectedCategory == category,
-                    accent = category.accent,
-                    onClick = { selectedCategory = category },
-                    modifier = Modifier.weight(1f),
-                )
+            Column(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .padding(horizontal = 10.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Category.entries.forEach { category ->
+                    GlassSidebarItem(
+                        label = category.label,
+                        selected = selectedCategory == category,
+                        accent = category.accent,
+                        onClick = { selectedCategory = category },
+                    )
+                }
             }
         }
     }
@@ -928,7 +988,29 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
 
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
-    Scaffold(containerColor = Color.Transparent, contentColor = LocalGlassPalette.current.ink) { padding ->
+    // A thin vertical gradient standing in for a hard divider between side-by-side panes.
+    val verticalDivider: @Composable () -> Unit = {
+        Box(
+            Modifier
+                .fillMaxHeight()
+                .width(1.dp)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.Transparent,
+                            LocalGlassPalette.current.inkFaint.copy(alpha = 0.35f),
+                            Color.Transparent,
+                        ),
+                    ),
+                ),
+        )
+    }
+
+    Scaffold(
+        containerColor = Color.Transparent,
+        contentColor = LocalGlassPalette.current.ink,
+        bottomBar = { if (!isLandscape) bottomNav() },
+    ) { padding ->
         PullToRefreshBox(
             isRefreshing = refreshing,
             onRefresh = { refreshConnection() },
@@ -947,37 +1029,24 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
             },
         ) {
             if (isLandscape) {
-                // Controls hug the left edge, close to the thumb; a full-height "monitor"
-                // pane on the right carries everything that's read rather than tapped. Each
-                // side scrolls on its own. A thin vertical gradient stands in for a hard
-                // divider between them.
+                // A Finder-style sidebar picks the category; a middle pane shows its cards;
+                // a full-height "monitor" pane on the right carries everything that's read
+                // rather than tapped. Each scrolling pane scrolls on its own.
                 Row(Modifier.fillMaxSize()) {
+                    sidebarNav()
+                    verticalDivider()
                     Column(
                         modifier = Modifier
                             .fillMaxHeight()
-                            .width(300.dp)
+                            .width(280.dp)
                             .verticalScroll(rememberScrollState())
                             .padding(horizontal = 16.dp, vertical = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
                         header()
-                        categoryTabs()
                         categoryContent()
                     }
-                    Box(
-                        Modifier
-                            .fillMaxHeight()
-                            .width(1.dp)
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(
-                                        Color.Transparent,
-                                        LocalGlassPalette.current.inkFaint.copy(alpha = 0.35f),
-                                        Color.Transparent,
-                                    ),
-                                ),
-                            ),
-                    )
+                    verticalDivider()
                     Column(
                         modifier = Modifier
                             .fillMaxHeight()
@@ -1003,7 +1072,6 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 ) {
                     header()
                     connectionCard()
-                    categoryTabs()
                     categoryContent()
                     systemInfoCard()
                     authorizedWarning()
