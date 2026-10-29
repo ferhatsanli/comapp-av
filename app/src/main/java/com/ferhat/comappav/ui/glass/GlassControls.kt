@@ -1,8 +1,11 @@
 package com.ferhat.comappav.ui.glass
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,15 +22,26 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -135,37 +149,73 @@ fun GlassChip(
     }
 }
 
+private const val NAV_BLUR_DP = 24f
+
 /**
- * Flat frosted dock for navigation - a bottom bar in portrait, a sidebar in landscape. Lighter
- * than [GlassCard]: no blur backdrop or floating shadow, since it's a fixed dock, not a card
- * that floats over the aurora background.
+ * Frosted-glass dock for the bottom navigation bar, in the same macOS style as [GlassCard]: a
+ * blurred copy of the aurora backdrop (aligned with the real one, so it reads as see-through
+ * glass) under the same thin frost tint. It sits flush against the screen's left, right and
+ * bottom edges, so the only edge it marks is the top one - a soft hairline that fades out
+ * towards the sides, like a macOS toolbar's separator. No frame, no flat fill.
  */
 @Composable
 fun GlassNavSurface(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
+    val backdrop = LocalGlassBackdrop.current
     val palette = LocalGlassPalette.current
+    var origin by remember { mutableStateOf(Offset.Zero) }
     Box(
         modifier
-            // frostTop/Mid/Bottom are a thin tint meant to sit on top of something opaque
-            // (GlassCard layers them over a blurred backdrop) - without a base fill under it,
-            // this dock would be almost see-through, especially in dark mode.
-            .background(palette.baseMid)
-            .background(
-                Brush.verticalGradient(listOf(palette.frostTop, palette.frostMid, palette.frostBottom)),
-            )
-            .border(
-                width = 1.dp,
-                brush = Brush.linearGradient(listOf(palette.rimTop, palette.rimBottom)),
-                shape = RectangleShape,
-            ),
+            .clipToBounds()
+            .onGloballyPositioned { origin = it.positionInRoot() },
     ) {
+        if (backdrop != null) {
+            Canvas(
+                Modifier
+                    .matchParentSize()
+                    .graphicsLayer {
+                        val radius = NAV_BLUR_DP.dp.toPx()
+                        renderEffect = BlurEffect(radius, radius, TileMode.Clamp)
+                    },
+            ) {
+                val root = backdrop.rootSize.value
+                translate(left = -origin.x, top = -origin.y) {
+                    drawAurora(
+                        phase = backdrop.phase.value,
+                        area = Size(root.width.toFloat(), root.height.toFloat()),
+                        palette = palette,
+                    )
+                }
+            }
+        } else {
+            // Same fallback GlassCard uses when there is no backdrop to blur.
+            Box(Modifier.matchParentSize().background(palette.baseMid))
+        }
+        Box(
+            Modifier
+                .matchParentSize()
+                .drawBehind {
+                    drawRect(
+                        Brush.verticalGradient(listOf(palette.frostTop, palette.frostMid, palette.frostBottom)),
+                    )
+                    val hairline = palette.rimTop.copy(alpha = palette.rimTop.alpha * 0.55f)
+                    drawRect(
+                        brush = Brush.horizontalGradient(listOf(Color.Transparent, hairline, hairline, Color.Transparent)),
+                        topLeft = Offset.Zero,
+                        size = Size(size.width, 1.dp.toPx()),
+                    )
+                },
+        )
         content()
     }
 }
 
-/** One destination in a [GlassNavSurface] bottom bar: a small accent bar above the label. */
+/**
+ * One destination in a [GlassNavSurface] bottom bar. The selected one sits on a soft tinted
+ * pill, like a selected row in a macOS sidebar; the tint fades in and out when switching.
+ */
 @Composable
 fun GlassBottomNavItem(
     label: String,
@@ -175,24 +225,31 @@ fun GlassBottomNavItem(
     accent: Color = GlassColors.Blue,
 ) {
     val palette = LocalGlassPalette.current
-    Column(
+    val shape = RoundedCornerShape(12.dp)
+    val pill by animateColorAsState(
+        targetValue = if (selected) accent.copy(alpha = 0.20f) else Color.Transparent,
+        label = "navPill",
+    )
+    Row(
         modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(shape)
+            .background(pill, shape)
             .clickable(onClick = onClick)
-            .padding(vertical = 10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             Modifier
-                .size(width = 28.dp, height = 3.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(if (selected) accent else Color.Transparent),
+                .size(7.dp)
+                .clip(CircleShape)
+                .background(if (selected) accent else palette.inkFaint, CircleShape),
         )
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.width(7.dp))
         Text(
             text = label,
-            color = if (selected) accent else palette.inkMuted,
-            fontSize = 12.sp,
+            color = if (selected) palette.ink else palette.inkMuted,
+            fontSize = 13.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
         )
     }
