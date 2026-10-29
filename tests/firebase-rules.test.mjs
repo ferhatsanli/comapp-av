@@ -323,6 +323,47 @@ try {
     }));
     await assertFails(update(command(piDb, "ping-not-scanned"), { status: "SUCCESS", result: "SCANNED", processingAt: null }));
   });
+  await check("POWER_MODE carries a mode (PERFORMANCE/POWERSAVE), no text, and completes with MODE_SET", async () => {
+    await assertSucceeds(set(command(androidDb, "mode-save"), {
+      action: "POWER_MODE", senderUid: ANDROID, targetUid: PI, status: "PENDING", mode: "POWERSAVE",
+    }));
+    await assertSucceeds(set(command(androidDb, "mode-perf"), {
+      action: "POWER_MODE", senderUid: ANDROID, targetUid: PI, status: "PENDING", mode: "PERFORMANCE",
+    }));
+    await assertFails(set(command(androidDb, "mode-no-mode"), {
+      action: "POWER_MODE", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+    }));
+    await assertFails(set(command(androidDb, "mode-bad-value"), {
+      action: "POWER_MODE", senderUid: ANDROID, targetUid: PI, status: "PENDING", mode: "TURBO",
+    }));
+    await assertFails(set(command(androidDb, "mode-text"), {
+      action: "POWER_MODE", senderUid: ANDROID, targetUid: PI, status: "PENDING", mode: "POWERSAVE", text: "hi",
+    }));
+    await assertFails(set(command(androidDb, "ping-with-mode"), {
+      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING", mode: "POWERSAVE",
+    }));
+
+    await assertSucceeds(update(command(piDb, "mode-save"), {
+      status: "PROCESSING", processingAt: Date.now(),
+    }));
+    await assertFails(update(command(piDb, "mode-save"), { mode: "PERFORMANCE" }));
+    await assertFails(update(command(piDb, "mode-save"), { status: "SUCCESS", result: "SCANNED", processingAt: null }));
+    await assertSucceeds(update(command(piDb, "mode-save"), {
+      status: "SUCCESS", result: "MODE_SET", processingAt: null,
+    }));
+    const done = await assertSucceeds(get(command(androidDb, "mode-save")));
+    assert.equal(done.val().result, "MODE_SET");
+    assert.equal(done.val().mode, "POWERSAVE");
+
+    // Other actions must still reject MODE_SET as their result.
+    await assertSucceeds(set(command(androidDb, "ping-not-mode-set"), {
+      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+    }));
+    await assertSucceeds(update(command(piDb, "ping-not-mode-set"), {
+      status: "PROCESSING", processingAt: Date.now(),
+    }));
+    await assertFails(update(command(piDb, "ping-not-mode-set"), { status: "SUCCESS", result: "MODE_SET", processingAt: null }));
+  });
   await check("Only the Pi writes /network/latest, and only Android reads it, with required shape", async () => {
     await assertFails(get(ref(anonymousDb, "network/latest")));
     await assertFails(set(ref(piDb, "network/latest"), {
@@ -397,6 +438,14 @@ try {
     await assertFails(set(ref(piDb, "power/latest"), {
       reportedAt: Date.now(),
       system: { fanRpm: -5 },
+    }));
+    await assertSucceeds(set(ref(piDb, "power/latest"), {
+      reportedAt: Date.now(),
+      powerMode: "POWERSAVE",
+    }));
+    await assertFails(set(ref(piDb, "power/latest"), {
+      reportedAt: Date.now(),
+      powerMode: "TURBO",
     }));
     await assertFails(set(ref(androidDb, "power/latest"), {
       reportedAt: Date.now(),

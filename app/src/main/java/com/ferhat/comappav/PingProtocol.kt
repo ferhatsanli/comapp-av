@@ -10,6 +10,9 @@ internal object PingProtocol {
     const val SLEEP_ACTION = "SLEEP"
     const val SCAN_ACTION = "SCAN"
     const val SHUTDOWN_ACTION = "SHUTDOWN"
+    const val POWER_MODE_ACTION = "POWER_MODE"
+    const val MODE_PERFORMANCE = "PERFORMANCE"
+    const val MODE_POWERSAVE = "POWERSAVE"
     const val MAX_SLEEP_MINUTES = 1440
     const val MAX_SPEAK_LENGTH = 300
 
@@ -57,6 +60,15 @@ internal object PingProtocol {
         "targetUid" to PI_UID,
         "status" to "PENDING",
         "createdAt" to ServerValue.TIMESTAMP,
+    )
+
+    /** [mode] must be [MODE_PERFORMANCE] or [MODE_POWERSAVE]. */
+    fun powerModeCommand(senderUid: String, mode: String): Map<String, String> = mapOf(
+        "action" to POWER_MODE_ACTION,
+        "senderUid" to senderUid,
+        "targetUid" to PI_UID,
+        "status" to "PENDING",
+        "mode" to mode,
     )
 
     /** 80 -> "1 h 20 min", 120 -> "2 h", 2 -> "2 min". */

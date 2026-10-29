@@ -85,6 +85,7 @@ private data class PowerSnapshot(
     val batteryPercent: Long?,
     val fanRpm: Long?,
     val ecTempC: Long?,
+    val powerMode: String?,
 )
 
 private const val DATABASE_URL =
@@ -229,6 +230,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var speakText by rememberSaveable { mutableStateOf("") }
     var sleepRequest by remember { mutableStateOf<SleepRequest?>(null) }
     var shutdownRequested by remember { mutableStateOf(false) }
+    var requestedPowerMode by remember { mutableStateOf<String?>(null) }
     var sleepHours by rememberSaveable { mutableStateOf("0") }
     var sleepMinutes by rememberSaveable { mutableStateOf("30") }
     var networkDevices by remember { mutableStateOf<List<NetworkDevice>>(emptyList()) }
@@ -363,6 +365,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     batteryPercent = snapshot.child("battery/percent").getValue(Long::class.java),
                     fanRpm = system.child("fanRpm").getValue(Long::class.java),
                     ecTempC = system.child("ecTempC").getValue(Long::class.java),
+                    powerMode = snapshot.child("powerMode").getValue(String::class.java),
                 )
             }
 
@@ -634,6 +637,60 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
     }
 
+    val powerModeCard: @Composable () -> Unit = {
+        val busy = commandAction == PingProtocol.POWER_MODE_ACTION &&
+            (sending || commandStatus in setOf("PENDING", "PROCESSING"))
+        val currentMode = powerSnapshot?.powerMode
+        GlassCommandCard(
+            title = "Power mode",
+            tag = PingProtocol.POWER_MODE_ACTION,
+            description = "This machine runs 24/7 and never needs performance - keep it at " +
+                "the lowest power draw, or switch back to normal if you need it responsive.",
+            accent = GlassColors.Amber,
+        ) {
+            currentMode?.let {
+                Text(
+                    "Current: ${if (it == PingProtocol.MODE_POWERSAVE) "Power save" else "Performance"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LocalGlassPalette.current.inkMuted,
+                )
+                Spacer(Modifier.height(4.dp))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassButton(
+                    text = "Performance",
+                    modifier = Modifier.weight(1f),
+                    accent = GlassColors.Blue,
+                    prominent = currentMode == PingProtocol.MODE_PERFORMANCE,
+                    enabled = canSend && !busy,
+                    loading = busy && requestedPowerMode == PingProtocol.MODE_PERFORMANCE,
+                    onClick = {
+                        requestedPowerMode = PingProtocol.MODE_PERFORMANCE
+                        sendCommand(
+                            PingProtocol.POWER_MODE_ACTION,
+                            PingProtocol.powerModeCommand(user.uid, PingProtocol.MODE_PERFORMANCE),
+                        )
+                    },
+                )
+                GlassButton(
+                    text = "Power save",
+                    modifier = Modifier.weight(1f),
+                    accent = GlassColors.Amber,
+                    prominent = currentMode == PingProtocol.MODE_POWERSAVE,
+                    enabled = canSend && !busy,
+                    loading = busy && requestedPowerMode == PingProtocol.MODE_POWERSAVE,
+                    onClick = {
+                        requestedPowerMode = PingProtocol.MODE_POWERSAVE
+                        sendCommand(
+                            PingProtocol.POWER_MODE_ACTION,
+                            PingProtocol.powerModeCommand(user.uid, PingProtocol.MODE_POWERSAVE),
+                        )
+                    },
+                )
+            }
+        }
+    }
+
     val networkCard: @Composable () -> Unit = {
         if (networkDevices.isNotEmpty()) {
             GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Neutral, cornerRadius = 22.dp) {
@@ -756,6 +813,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                                 PingProtocol.SLEEP_ACTION -> "The laptop is going to sleep."
                                 PingProtocol.SCAN_ACTION -> "Network scan complete."
                                 PingProtocol.SHUTDOWN_ACTION -> "The laptop is powering off now."
+                                PingProtocol.POWER_MODE_ACTION -> "Power mode updated."
                                 else -> "PONG received from the agent."
                             },
                         )
@@ -811,6 +869,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                         sleepCard()
                         scanCard()
                         shutdownCard()
+                        powerModeCard()
                     }
                     Box(
                         Modifier
@@ -857,6 +916,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     sleepCard()
                     scanCard()
                     shutdownCard()
+                    powerModeCard()
                     networkCard()
                     powerCard()
                     authorizedWarning()
