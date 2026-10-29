@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -50,6 +51,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -60,6 +62,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
@@ -73,12 +76,15 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.database.DataSnapshot
@@ -112,6 +118,7 @@ private enum class Category(val label: String, val contents: String, val accent:
     COMMANDS("Commands", "Ping · Speak", GlassColors.Blue),
     POWER("Power", "Sleep · Shutdown · Power mode", GlassColors.Amber),
     NETWORK("Network", "Scan · Devices on the network", GlassColors.Neutral),
+    CONSOLE("Console", "App log · errors · crashes", GlassColors.Green),
 }
 
 private data class PowerSnapshot(
@@ -135,9 +142,20 @@ private const val DATABASE_URL =
 // not a real tariff — edit this constant if you want a sharper number.
 private const val ELECTRICITY_PRICE_EUR_PER_KWH = 0.324
 
+private const val PENDING_WARNING_MILLIS = 15_000L
+
+/** How many log lines the Console draws; "Copy all" always includes every saved entry. */
+private const val CONSOLE_VISIBLE_ENTRIES = 150
+
+/** The last characters of a Firebase push ID - enough to tell commands apart in the log. */
+private fun shortId(id: String): String = id.takeLast(6)
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (AppLog.init(this)) {
+            AppLog.info("App", "Started v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+        }
         enableEdgeToEdge()
         val auth = FirebaseAuth.getInstance()
         val database = FirebaseDatabase.getInstance(DATABASE_URL)
@@ -237,9 +255,11 @@ private fun SignInScreen(auth: FirebaseAuth) {
                                     isLoading = false
                                     if (task.isSuccessful) {
                                         password = ""
+                                        AppLog.info("Auth", "Signed in")
                                     } else {
                                         error = task.exception?.localizedMessage
                                             ?: "Sign-in failed. Check the account and connection."
+                                        AppLog.error("Auth", "Sign-in failed: $error")
                                     }
                                 }
                         }
@@ -277,6 +297,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     // list itself. [openProgress] is 1 when that folder is fully on screen and 0 when it's slid
     // away to the right; dragging it with a swipe-back gesture moves it in between.
     var openCategory by rememberSaveable { mutableStateOf<Category?>(null) }
+    // Console: show only warnings and errors.
+    var consoleErrorsOnly by rememberSaveable { mutableStateOf(false) }
     val openProgress = remember { Animatable(if (openCategory != null) 1f else 0f) }
     var sleepHours by rememberSaveable { mutableStateOf("0") }
     var sleepMinutes by rememberSaveable { mutableStateOf("30") }
@@ -329,6 +351,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         val id = newCommand.key
         if (id == null) {
             error = "Could not allocate a command ID."
+            AppLog.error("Command", "$action: $error")
         } else {
             commandStatus = null
             errorCode = null
@@ -340,11 +363,13 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     commandAction = action
                     commandId = id
                     commandStatus = "PENDING"
+                    AppLog.info("Command", "$action sent (${shortId(id)}), waiting for the agent")
                 }
                 .addOnFailureListener { exception ->
                     sending = false
                     error = exception.localizedMessage
                         ?: "Could not send $action. Check the connection and Rules."
+                    AppLog.error("Command", "$action could not be sent: $error")
                 }
         }
     }
@@ -353,12 +378,22 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         val connectionRef = database.getReference(".info/connected")
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                connected = snapshot.getValue(Boolean::class.java) ?: false
+                val now = snapshot.getValue(Boolean::class.java) ?: false
+                if (now != connected) {
+                    // The very first "false" at startup is just "not connected yet" - not news.
+                    if (now) {
+                        AppLog.info("Connection", "Connected to Firebase")
+                    } else if (connected == true) {
+                        AppLog.warn("Connection", "Lost the connection to Firebase")
+                    }
+                }
+                connected = now
             }
 
             override fun onCancelled(databaseError: DatabaseError) {
                 connected = false
                 error = databaseError.message
+                AppLog.error("Connection", "Connection listener cancelled: ${databaseError.message}")
             }
         }
         connectionRef.addValueEventListener(listener)
@@ -374,13 +409,29 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
             val listener = object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
                     if (!snapshot.exists()) return
-                    commandStatus = snapshot.child("status").getValue(String::class.java)
-                    errorCode = snapshot.child("errorCode").getValue(String::class.java)
+                    val newStatus = snapshot.child("status").getValue(String::class.java)
+                    val newErrorCode = snapshot.child("errorCode").getValue(String::class.java)
+                    if (newStatus != commandStatus) {
+                        val what = "$commandAction (${shortId(id)})"
+                        when (newStatus) {
+                            "PROCESSING" -> AppLog.info("Command", "$what picked up by the agent")
+                            "SUCCESS" -> AppLog.info(
+                                "Command",
+                                "$what succeeded: ${snapshot.child("result").getValue(String::class.java)}",
+                            )
+                            "FAILED" -> AppLog.error("Command", "$what failed: ${newErrorCode ?: "no error code"}")
+                            else -> Unit
+                        }
+                    }
+                    commandStatus = newStatus
+                    errorCode = newErrorCode
                     error = null
                 }
 
                 override fun onCancelled(databaseError: DatabaseError) {
-                    error = "Could not observe command: ${databaseError.message}"
+                    val message = "Could not observe command: ${databaseError.message}"
+                    error = message
+                    AppLog.error("Command", message)
                 }
             }
             commandRef.addValueEventListener(listener)
@@ -403,6 +454,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
 
             override fun onCancelled(databaseError: DatabaseError) {
                 // Leave the last known device list visible; this is a read-only side panel.
+                AppLog.warn("Network", "Could not read the device list: ${databaseError.message}")
             }
         }
         networkRef.addValueEventListener(listener)
@@ -433,10 +485,25 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
 
             override fun onCancelled(databaseError: DatabaseError) {
                 // Leave the last known snapshot visible; this is a read-only side panel.
+                AppLog.warn("Power", "Could not read the power report: ${databaseError.message}")
             }
         }
         powerRef.addValueEventListener(listener)
         onDispose { powerRef.removeEventListener(listener) }
+    }
+
+    // A command that nobody picks up is the classic "agent not running / outdated" symptom -
+    // say so instead of leaving only "Waiting for the agent" on screen.
+    LaunchedEffect(commandId, commandStatus) {
+        val id = commandId
+        if (id != null && commandStatus == "PENDING") {
+            delay(PENDING_WARNING_MILLIS)
+            AppLog.warn(
+                "Command",
+                "$commandAction (${shortId(id)}) still PENDING after ${PENDING_WARNING_MILLIS / 1000} s - " +
+                    "the agent hasn't picked it up. Is it running, and is it the latest version?",
+            )
+        }
     }
 
     val request = sleepRequest
@@ -518,7 +585,10 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     color = LocalGlassPalette.current.inkFaint,
                 )
             }
-            GlassChip("Sign out", onClick = { auth.signOut() })
+            GlassChip("Sign out", onClick = {
+                AppLog.info("Auth", "Signed out")
+                auth.signOut()
+            })
         }
     }
 
@@ -825,6 +895,120 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
     }
 
+    // Console: the app's own event log (see AppLog), newest first, for spotting and sharing
+    // errors. "Copy all" puts every saved entry on the clipboard, ready to paste into a chat.
+    val consoleCard: @Composable () -> Unit = {
+        val clipboard = LocalClipboardManager.current
+        val context = LocalContext.current
+        val palette = LocalGlassPalette.current
+        val all = AppLog.entries
+        val newestFirst = all.asReversed().filter { !consoleErrorsOnly || it.level != LogLevel.INFO }
+        val shown = newestFirst.take(CONSOLE_VISIBLE_ENTRIES)
+        // "Clear" needs a second tap within a few seconds, so a stray tap can't wipe the log.
+        var confirmClear by remember { mutableStateOf(false) }
+        LaunchedEffect(confirmClear) {
+            if (confirmClear) {
+                delay(3_000)
+                confirmClear = false
+            }
+        }
+        GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Green, cornerRadius = 22.dp) {
+            Text(
+                "Console",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                "${all.size} events saved · newest first · tap a line to copy it",
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.inkMuted,
+            )
+            val actionScroll = rememberScrollState()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalEdgeFade(actionScroll)
+                    .horizontalScroll(actionScroll),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                GlassChip(
+                    text = if (consoleErrorsOnly) "Show all" else "Warnings & errors",
+                    onClick = { consoleErrorsOnly = !consoleErrorsOnly },
+                )
+                GlassChip(
+                    text = "Copy all",
+                    onClick = {
+                        val header = "ComApp AV v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) - " +
+                            "${all.size} log entries, oldest first"
+                        val body = all.joinToString(separator = "\n") { LogFormat.format(it) }
+                        clipboard.setText(AnnotatedString("$header\n$body"))
+                        Toast.makeText(context, "Copied ${all.size} log entries", Toast.LENGTH_SHORT).show()
+                    },
+                )
+                GlassChip(
+                    text = if (confirmClear) "Tap again to clear" else "Clear",
+                    onClick = {
+                        if (confirmClear) {
+                            AppLog.clear()
+                            confirmClear = false
+                        } else {
+                            confirmClear = true
+                        }
+                    },
+                )
+            }
+            if (shown.isEmpty()) {
+                Text(
+                    if (consoleErrorsOnly) "No warnings or errors." else "No events yet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.inkFaint,
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                shown.forEach { entry ->
+                    val levelColor = when (entry.level) {
+                        LogLevel.INFO -> palette.inkMuted
+                        LogLevel.WARN -> GlassColors.Amber
+                        LogLevel.ERROR -> GlassColors.Red
+                    }
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                clipboard.setText(AnnotatedString(LogFormat.format(entry)))
+                                Toast.makeText(context, "Copied this line", Toast.LENGTH_SHORT).show()
+                            }
+                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                    ) {
+                        Text(
+                            "${LogFormat.timeOfDay(entry)}  ${entry.level.name}  ${entry.tag}",
+                            color = levelColor,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            entry.message,
+                            color = palette.ink,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp,
+                            maxLines = 6,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            if (newestFirst.size > shown.size) {
+                Text(
+                    "Showing the newest ${shown.size} of ${newestFirst.size}. \"Copy all\" includes everything.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.inkFaint,
+                )
+            }
+        }
+    }
+
     // The cards inside one category - shared by portrait's bottom-nav tabs and landscape's
     // open folder, so both show exactly the same cards.
     val categoryCards: @Composable (Category) -> Unit = { category ->
@@ -842,6 +1026,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 scanCard()
                 networkCard()
             }
+            Category.CONSOLE -> consoleCard()
         }
     }
 

@@ -245,12 +245,14 @@ fun GlassBottomNavItem(
                 .clip(CircleShape)
                 .background(if (selected) accent else palette.inkFaint, CircleShape),
         )
-        Spacer(Modifier.width(7.dp))
+        Spacer(Modifier.width(5.dp))
         Text(
             text = label,
             color = if (selected) palette.ink else palette.inkMuted,
-            fontSize = 13.sp,
+            fontSize = 12.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1,
+            softWrap = false,
         )
     }
 }
