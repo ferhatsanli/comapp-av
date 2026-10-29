@@ -147,6 +147,10 @@ fun GlassNavSurface(
     val palette = LocalGlassPalette.current
     Box(
         modifier
+            // frostTop/Mid/Bottom are a thin tint meant to sit on top of something opaque
+            // (GlassCard layers them over a blurred backdrop) - without a base fill under it,
+            // this dock would be almost see-through, especially in dark mode.
+            .background(palette.baseMid)
             .background(
                 Brush.verticalGradient(listOf(palette.frostTop, palette.frostMid, palette.frostBottom)),
             )
