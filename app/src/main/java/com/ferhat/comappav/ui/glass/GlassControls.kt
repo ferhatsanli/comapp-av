@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -157,6 +158,7 @@ fun GlassNavSurface(
             .border(
                 width = 1.dp,
                 brush = Brush.linearGradient(listOf(palette.rimTop, palette.rimBottom)),
+                shape = RectangleShape,
             ),
     ) {
         content()
