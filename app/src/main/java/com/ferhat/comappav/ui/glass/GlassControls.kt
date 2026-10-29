@@ -338,8 +338,8 @@ fun GlassBottomNavItem(
 }
 
 /**
- * A "folder" entry that opens one level deeper: accent dot, title, what's inside, and a
- * chevron pointing the way it will slide.
+ * A "folder" entry that opens something to its right - one level deeper, or a pane beside it:
+ * accent dot, title, what's inside, and a chevron pointing that way.
  */
 @Composable
 fun GlassFolderRow(
@@ -348,14 +348,21 @@ fun GlassFolderRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     accent: Color = GlassColors.Blue,
+    selected: Boolean = false,
 ) {
     val palette = LocalGlassPalette.current
     val shape = RoundedCornerShape(16.dp)
+    // Selected (its content is open in another pane): tinted with the accent, like a selected
+    // row in a macOS sidebar.
+    val fill by animateColorAsState(
+        targetValue = if (selected) accent.copy(alpha = 0.22f) else palette.chipFill,
+        label = "folderRowFill",
+    )
     Row(
         modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(palette.chipFill, shape)
+            .background(fill, shape)
             .border(1.dp, Brush.linearGradient(listOf(palette.rimTop, palette.rimBottom)), shape)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),

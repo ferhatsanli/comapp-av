@@ -142,6 +142,15 @@ private enum class Category(
     CONSOLE("Console", "App log · errors · crashes", GlassColors.Green, listOf(CardId.CONSOLE)),
 }
 
+/**
+ * Tools inside the Console folder in landscape. The list sits on the left; the selected tool's
+ * window fills the right-hand pane. Add a tool here (and its window in the right pane) to have
+ * it show up under Console.
+ */
+private enum class ConsoleTool(val label: String, val description: String) {
+    LOGS("Logs", "Recent events, errors and crashes"),
+}
+
 /** Key of the category order in [CardOrderStore]; each category's cards are saved under its name. */
 private const val CATEGORY_ORDER_KEY = "categories"
 
@@ -323,6 +332,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var openCategory by rememberSaveable { mutableStateOf<Category?>(null) }
     // Console: show only warnings and errors.
     var consoleErrorsOnly by rememberSaveable { mutableStateOf(false) }
+    // Landscape Console folder: the tool whose window is shown in the right pane, if any.
+    var consoleTool by rememberSaveable { mutableStateOf<ConsoleTool?>(null) }
 
     // Reorder mode, and the user's saved order of categories and of the cards in each one.
     val context = LocalContext.current
@@ -375,6 +386,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     // Landscape drill-down: going into a category slides its cards in from the right; going
     // back slides them out to the right again and the category list returns from the left.
     fun openCategoryFolder(category: Category) {
+        consoleTool = null
         openCategory = category
         selectedCategory = category // keep portrait's tab in sync if the phone is rotated
         scope.launch { openProgress.animateTo(1f, tween(durationMillis = 300)) }
@@ -401,6 +413,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     }
 
     fun closeCategoryFolder() {
+        consoleTool = null // the right pane goes back to the info cards right away
         scope.launch {
             openProgress.animateTo(0f, tween(durationMillis = 250))
             openCategory = null
@@ -1157,6 +1170,27 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
     }
 
+    // Landscape Console folder: a list of tools; tapping one opens its window in the right pane,
+    // tapping it again closes it.
+    val consoleTools: @Composable () -> Unit = {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                "Pick a tool to open it on the right.",
+                style = MaterialTheme.typography.bodySmall,
+                color = LocalGlassPalette.current.inkMuted,
+            )
+            ConsoleTool.entries.forEach { tool ->
+                GlassFolderRow(
+                    title = tool.label,
+                    subtitle = tool.description,
+                    accent = Category.CONSOLE.accent,
+                    selected = consoleTool == tool,
+                    onClick = { consoleTool = if (consoleTool == tool) null else tool },
+                )
+            }
+        }
+    }
+
     // Landscape: the left pane works like browsing folders. At the root it lists only the
     // categories; opening one slides its cards in from the right over the list. Going back -
     // the "‹ Categories" chip, the system back button, or a left-to-right swipe anywhere on
@@ -1265,10 +1299,11 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                             )
                             Spacer(Modifier.width(8.dp))
                             // The header (and its reorder button) isn't on screen inside a
-                            // folder, so the folder bar carries its own.
-                            reorderButton()
+                            // folder, so the folder bar carries its own. Console lists tools,
+                            // not cards, so there's nothing to reorder there.
+                            if (category != Category.CONSOLE) reorderButton()
                         }
-                        categoryCards(category)
+                        if (category == Category.CONSOLE) consoleTools() else categoryCards(category)
                     }
                 }
             }
@@ -1447,6 +1482,10 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     landscapeNavigator()
                     verticalDivider()
                     val infoScroll = rememberScrollState()
+                    // A Console tool, while one is picked in the open Console folder; otherwise
+                    // the usual info cards.
+                    val rightPaneTool = if (openCategory == Category.CONSOLE) consoleTool else null
+                    LaunchedEffect(rightPaneTool) { infoScroll.scrollTo(0) }
                     Column(
                         modifier = Modifier
                             .fillMaxHeight()
@@ -1456,11 +1495,30 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                             .padding(horizontal = 16.dp, vertical = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        connectionCard()
-                        systemInfoCard()
-                        authorizedWarning()
-                        latestCommandCard()
-                        errorText()
+                        AnimatedContent(
+                            targetState = rightPaneTool,
+                            transitionSpec = {
+                                fadeIn(tween(durationMillis = 220)) togetherWith fadeOut(tween(durationMillis = 150))
+                            },
+                            label = "rightPane",
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { tool ->
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(14.dp),
+                            ) {
+                                when (tool) {
+                                    ConsoleTool.LOGS -> consoleCard()
+                                    null -> {
+                                        connectionCard()
+                                        systemInfoCard()
+                                        authorizedWarning()
+                                        latestCommandCard()
+                                        errorText()
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             } else {
