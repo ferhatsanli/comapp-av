@@ -37,11 +37,19 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -150,6 +158,78 @@ fun GlassChip(
 }
 
 private const val NAV_BLUR_DP = 24f
+
+/**
+ * Square icon-only button in the same glass material and height as [GlassChip], so the two sit
+ * side by side naturally. While [active] it is filled with [accent] (like a pressed toggle).
+ * [icon] draws the symbol in the given tint.
+ */
+@Composable
+fun GlassIconButton(
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    active: Boolean = false,
+    accent: Color = GlassColors.Blue,
+    icon: DrawScope.(tint: Color) -> Unit,
+) {
+    val palette = LocalGlassPalette.current
+    Box(
+        modifier
+            .size(32.dp)
+            .clip(ChipShape)
+            .drawBehind {
+                if (active) {
+                    drawRect(
+                        Brush.verticalGradient(
+                            listOf(accent.copy(alpha = palette.buttonTop), accent.copy(alpha = palette.buttonBottom)),
+                        ),
+                    )
+                } else {
+                    drawRect(palette.chipFill)
+                }
+            }
+            .border(1.dp, Brush.linearGradient(listOf(palette.rimTop, palette.rimBottom)), ChipShape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) {
+        val tint = if (active) Color.White else palette.ink
+        Canvas(Modifier.size(20.dp)) { icon(tint) }
+    }
+}
+
+/**
+ * "Reorder" symbol: three horizontal lines, with a chevron above them pointing up and one
+ * below pointing down - a ">" / "<" turned 90 degrees.
+ */
+fun DrawScope.drawReorderIcon(tint: Color) {
+    val w = size.width
+    val h = size.height
+    val strokeWidth = 1.5.dp.toPx()
+    for (y in listOf(0.36f, 0.5f, 0.64f)) {
+        drawLine(
+            color = tint,
+            start = Offset(w * 0.2f, h * y),
+            end = Offset(w * 0.8f, h * y),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round,
+        )
+    }
+    val chevron = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    val up = Path().apply {
+        moveTo(w * 0.33f, h * 0.21f)
+        lineTo(w * 0.5f, h * 0.07f)
+        lineTo(w * 0.67f, h * 0.21f)
+    }
+    val down = Path().apply {
+        moveTo(w * 0.33f, h * 0.79f)
+        lineTo(w * 0.5f, h * 0.93f)
+        lineTo(w * 0.67f, h * 0.79f)
+    }
+    drawPath(path = up, color = tint, style = chevron)
+    drawPath(path = down, color = tint, style = chevron)
+}
 
 /**
  * Frosted-glass dock for the bottom navigation bar, in the same macOS style as [GlassCard]: a

@@ -54,6 +54,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
@@ -75,6 +76,7 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -98,10 +100,13 @@ import com.ferhat.comappav.ui.glass.GlassChip
 import com.ferhat.comappav.ui.glass.GlassColors
 import com.ferhat.comappav.ui.glass.GlassCommandCard
 import com.ferhat.comappav.ui.glass.GlassFolderRow
+import com.ferhat.comappav.ui.glass.GlassIconButton
 import com.ferhat.comappav.ui.glass.GlassFieldShape
 import com.ferhat.comappav.ui.glass.GlassNavSurface
 import com.ferhat.comappav.ui.glass.GlassScreen
 import com.ferhat.comappav.ui.glass.LocalGlassPalette
+import com.ferhat.comappav.ui.glass.ReorderableColumn
+import com.ferhat.comappav.ui.glass.drawReorderIcon
 import com.ferhat.comappav.ui.glass.glassTextFieldColors
 import com.ferhat.comappav.ui.theme.ComAppAVTheme
 import kotlinx.coroutines.delay
@@ -113,13 +118,32 @@ private data class SleepRequest(val minutes: Int?)
 
 private data class NetworkDevice(val mac: String, val ip: String, val name: String)
 
-/** Command-card groups shown under the category tabs; ordinal order drives the slide direction. */
-private enum class Category(val label: String, val contents: String, val accent: Color) {
-    COMMANDS("Commands", "Ping · Speak", GlassColors.Blue),
-    POWER("Power", "Sleep · Shutdown · Power mode", GlassColors.Amber),
-    NETWORK("Network", "Scan · Devices on the network", GlassColors.Neutral),
-    CONSOLE("Console", "App log · errors · crashes", GlassColors.Green),
+/** Every card that can be moved around in reorder mode; the names are what gets saved. */
+private enum class CardId { PING, SPEAK, SLEEP, SHUTDOWN, POWER_MODE, SCAN, DEVICES, CONSOLE }
+
+/**
+ * Card groups, in their default order. The user can reorder both the categories and the cards
+ * inside each one; [cards] is only the starting order.
+ */
+private enum class Category(
+    val label: String,
+    val contents: String,
+    val accent: Color,
+    val cards: List<CardId>,
+) {
+    COMMANDS("Commands", "Ping · Speak", GlassColors.Blue, listOf(CardId.PING, CardId.SPEAK)),
+    POWER(
+        "Power",
+        "Sleep · Shutdown · Power mode",
+        GlassColors.Amber,
+        listOf(CardId.SLEEP, CardId.SHUTDOWN, CardId.POWER_MODE),
+    ),
+    NETWORK("Network", "Scan · Devices on the network", GlassColors.Neutral, listOf(CardId.SCAN, CardId.DEVICES)),
+    CONSOLE("Console", "App log · errors · crashes", GlassColors.Green, listOf(CardId.CONSOLE)),
 }
+
+/** Key of the category order in [CardOrderStore]; each category's cards are saved under its name. */
+private const val CATEGORY_ORDER_KEY = "categories"
 
 private data class PowerSnapshot(
     val reportedAt: Long?,
@@ -299,6 +323,23 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var openCategory by rememberSaveable { mutableStateOf<Category?>(null) }
     // Console: show only warnings and errors.
     var consoleErrorsOnly by rememberSaveable { mutableStateOf(false) }
+
+    // Reorder mode, and the user's saved order of categories and of the cards in each one.
+    val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val orderStore = remember { CardOrderStore(context) }
+    val savedOrders = remember { orderStore.load() }
+    var reordering by remember { mutableStateOf(false) }
+    var categoryOrder by remember {
+        mutableStateOf(CardOrder.apply(savedOrders[CATEGORY_ORDER_KEY], Category.entries.toList()) { it.name })
+    }
+    val cardOrders = remember {
+        mutableStateMapOf<Category, List<CardId>>().apply {
+            Category.entries.forEach { category ->
+                put(category, CardOrder.apply(savedOrders[category.name], category.cards) { it.name })
+            }
+        }
+    }
     val openProgress = remember { Animatable(if (openCategory != null) 1f else 0f) }
     var sleepHours by rememberSaveable { mutableStateOf("0") }
     var sleepMinutes by rememberSaveable { mutableStateOf("30") }
@@ -337,6 +378,26 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         openCategory = category
         selectedCategory = category // keep portrait's tab in sync if the phone is rotated
         scope.launch { openProgress.animateTo(1f, tween(durationMillis = 300)) }
+    }
+
+    fun saveOrders() {
+        orderStore.save(
+            mapOf(CATEGORY_ORDER_KEY to categoryOrder.map { it.name }) +
+                cardOrders.map { (category, cards) -> category.name to cards.map { it.name } },
+        )
+    }
+
+    // Entering reorder mode drops the keyboard (nothing inside a card can be typed into while
+    // reordering); leaving it saves the order on the phone.
+    fun toggleReordering() {
+        if (reordering) {
+            reordering = false
+            saveOrders()
+        } else {
+            focusManager.clearFocus()
+            reordering = true
+            AppLog.info("Layout", "Reorder mode on")
+        }
     }
 
     fun closeCategoryFolder() {
@@ -561,6 +622,24 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     // Shared pieces of content: extracted so portrait (one scrolling column) and landscape
     // (a controls strip + a separate full-height "monitor" pane) can arrange the exact same
     // cards differently without duplicating any of them.
+    val reorderButton: @Composable () -> Unit = {
+        GlassIconButton(
+            description = if (reordering) "Finish reordering" else "Reorder",
+            onClick = { toggleReordering() },
+            active = reordering,
+        ) { tint -> drawReorderIcon(tint) }
+    }
+
+    val reorderHint: @Composable () -> Unit = {
+        if (reordering) {
+            Text(
+                "Hold a card and drag it to move it. Tap the reorder button again to save.",
+                style = MaterialTheme.typography.bodySmall,
+                color = LocalGlassPalette.current.inkMuted,
+            )
+        }
+    }
+
     val header: @Composable () -> Unit = {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -585,10 +664,16 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     color = LocalGlassPalette.current.inkFaint,
                 )
             }
-            GlassChip("Sign out", onClick = {
-                AppLog.info("Auth", "Signed out")
-                auth.signOut()
-            })
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                reorderButton()
+                GlassChip("Sign out", onClick = {
+                    AppLog.info("Auth", "Signed out")
+                    auth.signOut()
+                })
+            }
         }
     }
 
@@ -882,7 +967,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Category.entries.forEach { category ->
+                categoryOrder.forEach { category ->
                     GlassBottomNavItem(
                         label = category.label,
                         selected = selectedCategory == category,
@@ -1011,22 +1096,37 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
 
     // The cards inside one category - shared by portrait's bottom-nav tabs and landscape's
     // open folder, so both show exactly the same cards.
+    val cardContent: @Composable (CardId) -> Unit = { id ->
+        when (id) {
+            CardId.PING -> pingCard()
+            CardId.SPEAK -> speakCard()
+            CardId.SLEEP -> sleepCard()
+            CardId.SHUTDOWN -> shutdownCard()
+            CardId.POWER_MODE -> powerModeCard()
+            CardId.SCAN -> scanCard()
+            CardId.DEVICES -> networkCard()
+            CardId.CONSOLE -> consoleCard()
+        }
+    }
+
     val categoryCards: @Composable (Category) -> Unit = { category ->
-        when (category) {
-            Category.COMMANDS -> {
-                pingCard()
-                speakCard()
-            }
-            Category.POWER -> {
-                sleepCard()
-                shutdownCard()
-                powerModeCard()
-            }
-            Category.NETWORK -> {
-                scanCard()
-                networkCard()
-            }
-            Category.CONSOLE -> consoleCard()
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            reorderHint()
+            ReorderableColumn(
+                items = cardOrders[category] ?: category.cards,
+                itemKey = { it },
+                enabled = reordering,
+                onMove = { from, to ->
+                    val cards = (cardOrders[category] ?: category.cards).toMutableList()
+                    cards.add(to, cards.removeAt(from))
+                    cardOrders[category] = cards
+                },
+                modifier = Modifier.fillMaxWidth(),
+                accent = category.accent,
+            ) { id -> cardContent(id) }
         }
     }
 
@@ -1036,7 +1136,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         AnimatedContent(
             targetState = selectedCategory,
             transitionSpec = {
-                val forward = targetState.ordinal > initialState.ordinal
+                val forward = categoryOrder.indexOf(targetState) > categoryOrder.indexOf(initialState)
                 (
                     slideInHorizontally(initialOffsetX = { width -> if (forward) width else -width }) +
                         fadeIn()
@@ -1118,7 +1218,16 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     style = MaterialTheme.typography.labelLarge,
                     color = LocalGlassPalette.current.inkMuted,
                 )
-                Category.entries.forEach { category ->
+                reorderHint()
+                ReorderableColumn(
+                    items = categoryOrder,
+                    itemKey = { it },
+                    enabled = reordering,
+                    onMove = { from, to ->
+                        categoryOrder = categoryOrder.toMutableList().apply { add(to, removeAt(from)) }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { category ->
                     GlassFolderRow(
                         title = category.label,
                         subtitle = category.contents,
@@ -1150,7 +1259,14 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                                 category.label,
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
                             )
+                            Spacer(Modifier.width(8.dp))
+                            // The header (and its reorder button) isn't on screen inside a
+                            // folder, so the folder bar carries its own.
+                            reorderButton()
                         }
                         categoryCards(category)
                     }
@@ -1276,6 +1392,12 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     // System back (button or edge gesture) closes an open landscape folder before it would
     // leave the app.
     BackHandler(enabled = isLandscape && openCategory != null) { closeCategoryFolder() }
+    // Declared after the folder handler, so while reordering, back ends reorder mode first.
+    BackHandler(enabled = reordering) { toggleReordering() }
+    DisposableEffect(Unit) {
+        // Rotating or leaving the screen mid-reorder still keeps the order.
+        onDispose { if (reordering) saveOrders() }
+    }
 
     // A thin vertical gradient standing in for a hard divider between side-by-side panes.
     val verticalDivider: @Composable () -> Unit = {
