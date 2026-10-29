@@ -49,6 +49,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
@@ -204,6 +205,13 @@ private fun SignInScreen(auth: FirebaseAuth) {
                     },
                 )
             }
+            Text(
+                "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = LocalGlassPalette.current.inkFaint,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }
@@ -438,6 +446,11 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     else "Signed in with an unrecognized account",
                     style = MaterialTheme.typography.bodySmall,
                     color = LocalGlassPalette.current.inkMuted,
+                )
+                Text(
+                    "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = LocalGlassPalette.current.inkFaint,
                 )
             }
             GlassChip("Sign out", onClick = { auth.signOut() })
