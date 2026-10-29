@@ -198,46 +198,43 @@ fun GlassBottomNavItem(
     }
 }
 
-/** One destination in a [GlassNavSurface] sidebar - a Finder-style highlighted row. */
+/**
+ * A "folder" entry that opens one level deeper: accent dot, title, what's inside, and a
+ * chevron pointing the way it will slide.
+ */
 @Composable
-fun GlassSidebarItem(
-    label: String,
-    selected: Boolean,
+fun GlassFolderRow(
+    title: String,
+    subtitle: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     accent: Color = GlassColors.Blue,
 ) {
     val palette = LocalGlassPalette.current
+    val shape = RoundedCornerShape(16.dp)
     Row(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .drawBehind {
-                if (selected) {
-                    drawRect(
-                        Brush.verticalGradient(
-                            listOf(accent.copy(alpha = palette.buttonTop), accent.copy(alpha = palette.buttonBottom)),
-                        ),
-                    )
-                }
-            }
+            .clip(shape)
+            .background(palette.chipFill, shape)
+            .border(1.dp, Brush.linearGradient(listOf(palette.rimTop, palette.rimBottom)), shape)
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             Modifier
-                .size(8.dp)
+                .size(10.dp)
                 .clip(CircleShape)
-                .background(if (selected) Color.White else accent.copy(alpha = 0.55f)),
+                .background(accent, CircleShape),
         )
-        Spacer(Modifier.width(10.dp))
-        Text(
-            text = label,
-            color = if (selected) Color.White else palette.ink,
-            fontSize = 14.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-        )
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(text = title, color = palette.ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Text(text = subtitle, color = palette.inkMuted, fontSize = 12.sp)
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(text = "›", color = palette.inkMuted, fontSize = 22.sp)
     }
 }
 

@@ -4,9 +4,12 @@ import android.content.res.Configuration
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -15,6 +18,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,6 +48,7 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
@@ -52,12 +57,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -80,10 +88,10 @@ import com.ferhat.comappav.ui.glass.GlassCard
 import com.ferhat.comappav.ui.glass.GlassChip
 import com.ferhat.comappav.ui.glass.GlassColors
 import com.ferhat.comappav.ui.glass.GlassCommandCard
+import com.ferhat.comappav.ui.glass.GlassFolderRow
 import com.ferhat.comappav.ui.glass.GlassFieldShape
 import com.ferhat.comappav.ui.glass.GlassNavSurface
 import com.ferhat.comappav.ui.glass.GlassScreen
-import com.ferhat.comappav.ui.glass.GlassSidebarItem
 import com.ferhat.comappav.ui.glass.LocalGlassPalette
 import com.ferhat.comappav.ui.glass.glassTextFieldColors
 import com.ferhat.comappav.ui.theme.ComAppAVTheme
@@ -97,10 +105,10 @@ private data class SleepRequest(val minutes: Int?)
 private data class NetworkDevice(val mac: String, val ip: String, val name: String)
 
 /** Command-card groups shown under the category tabs; ordinal order drives the slide direction. */
-private enum class Category(val label: String, val accent: Color) {
-    COMMANDS("Commands", GlassColors.Blue),
-    POWER("Power", GlassColors.Amber),
-    NETWORK("Network", GlassColors.Neutral),
+private enum class Category(val label: String, val contents: String, val accent: Color) {
+    COMMANDS("Commands", "Ping · Speak", GlassColors.Blue),
+    POWER("Power", "Sleep · Shutdown · Power mode", GlassColors.Amber),
+    NETWORK("Network", "Scan · Devices on the network", GlassColors.Neutral),
 }
 
 private data class PowerSnapshot(
@@ -169,8 +177,8 @@ private fun SignInScreen(auth: FirebaseAuth) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(scrollState)
                 .verticalEdgeFade(scrollState)
+                .verticalScroll(scrollState)
                 .padding(24.dp),
             verticalArrangement = Arrangement.Center,
         ) {
@@ -260,7 +268,13 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var sleepRequest by remember { mutableStateOf<SleepRequest?>(null) }
     var shutdownRequested by remember { mutableStateOf(false) }
     var requestedPowerMode by remember { mutableStateOf<String?>(null) }
-    var selectedCategory by remember { mutableStateOf(Category.COMMANDS) }
+    // Portrait: which bottom-nav tab is active.
+    var selectedCategory by rememberSaveable { mutableStateOf(Category.COMMANDS) }
+    // Landscape: the category "folder" that's open in the left pane, or null for the category
+    // list itself. [openProgress] is 1 when that folder is fully on screen and 0 when it's slid
+    // away to the right; dragging it with a swipe-back gesture moves it in between.
+    var openCategory by rememberSaveable { mutableStateOf<Category?>(null) }
+    val openProgress = remember { Animatable(if (openCategory != null) 1f else 0f) }
     var sleepHours by rememberSaveable { mutableStateOf("0") }
     var sleepMinutes by rememberSaveable { mutableStateOf("30") }
     var networkDevices by remember { mutableStateOf<List<NetworkDevice>>(emptyList()) }
@@ -289,6 +303,21 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
             delay(700)
             withTimeoutOrNull(8_000) { snapshotFlow { connected }.first { it == true } }
             refreshing = false
+        }
+    }
+
+    // Landscape drill-down: going into a category slides its cards in from the right; going
+    // back slides them out to the right again and the category list returns from the left.
+    fun openCategoryFolder(category: Category) {
+        openCategory = category
+        selectedCategory = category // keep portrait's tab in sync if the phone is rotated
+        scope.launch { openProgress.animateTo(1f, tween(durationMillis = 300)) }
+    }
+
+    fun closeCategoryFolder() {
+        scope.launch {
+            openProgress.animateTo(0f, tween(durationMillis = 250))
+            openCategory = null
         }
     }
 
@@ -586,8 +615,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(chipScroll)
-                    .horizontalEdgeFade(chipScroll),
+                    .horizontalEdgeFade(chipScroll)
+                    .horizontalScroll(chipScroll),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 listOf(2, 10, 30, 60, 120).forEach { minutes ->
@@ -791,34 +820,28 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
     }
 
-    // Landscape: a Finder-style sidebar, since there's already a side-by-side layout - this
-    // reads as browsing into a folder rather than switching a top tab strip.
-    val sidebarNav: @Composable () -> Unit = {
-        GlassNavSurface(
-            Modifier
-                .fillMaxHeight()
-                .width(132.dp),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .padding(horizontal = 10.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Category.entries.forEach { category ->
-                    GlassSidebarItem(
-                        label = category.label,
-                        selected = selectedCategory == category,
-                        accent = category.accent,
-                        onClick = { selectedCategory = category },
-                    )
-                }
+    // The cards inside one category - shared by portrait's bottom-nav tabs and landscape's
+    // open folder, so both show exactly the same cards.
+    val categoryCards: @Composable (Category) -> Unit = { category ->
+        when (category) {
+            Category.COMMANDS -> {
+                pingCard()
+                speakCard()
+            }
+            Category.POWER -> {
+                sleepCard()
+                shutdownCard()
+                powerModeCard()
+            }
+            Category.NETWORK -> {
+                scanCard()
+                networkCard()
             }
         }
     }
 
-    // The deeper/more specific a category is (further right in the tab row), the more it
-    // slides in from the right; moving back toward "Commands" slides in from the left.
+    // Portrait: switching bottom-nav tabs slides the cards sideways - a tab further right
+    // slides in from the right, one further left slides in from the left.
     val categoryContent: @Composable () -> Unit = {
         AnimatedContent(
             targetState = selectedCategory,
@@ -839,19 +862,107 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                when (category) {
-                    Category.COMMANDS -> {
-                        pingCard()
-                        speakCard()
+                categoryCards(category)
+            }
+        }
+    }
+
+    // Landscape: the left pane works like browsing folders. At the root it lists only the
+    // categories; opening one slides its cards in from the right over the list. Going back -
+    // the "‹ Categories" chip, the system back button, or a left-to-right swipe anywhere on
+    // the pane (Telegram-style, it follows the finger) - slides them out to the right again.
+    val landscapeNavigator: @Composable () -> Unit = {
+        val velocityTracker = remember { VelocityTracker() }
+        Box(
+            Modifier
+                .fillMaxHeight()
+                .width(300.dp)
+                .clipToBounds()
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { velocityTracker.resetTracking() },
+                        onDragEnd = {
+                            if (openCategory != null) {
+                                val velocityX = velocityTracker.calculateVelocity().x
+                                if (velocityX > 800f || openProgress.value < 0.6f) {
+                                    closeCategoryFolder()
+                                } else {
+                                    scope.launch { openProgress.animateTo(1f, tween(durationMillis = 200)) }
+                                }
+                            }
+                        },
+                        onDragCancel = {
+                            if (openCategory != null) {
+                                scope.launch { openProgress.animateTo(1f, tween(durationMillis = 200)) }
+                            }
+                        },
+                    ) { change, dragAmount ->
+                        if (openCategory != null) {
+                            change.consume()
+                            velocityTracker.addPosition(change.uptimeMillis, change.position)
+                            val paneWidth = size.width.toFloat().coerceAtLeast(1f)
+                            val next = (openProgress.value - dragAmount / paneWidth).coerceIn(0f, 1f)
+                            scope.launch { openProgress.snapTo(next) }
+                        }
                     }
-                    Category.POWER -> {
-                        sleepCard()
-                        shutdownCard()
-                        powerModeCard()
+                },
+        ) {
+            // Root level: just the category "folders". It drifts a little to the left and fades
+            // out while a folder is open, like the previous screen in a navigation stack.
+            val listScroll = rememberScrollState()
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        translationX = -0.3f * openProgress.value * size.width
+                        alpha = 1f - openProgress.value
                     }
-                    Category.NETWORK -> {
-                        scanCard()
-                        networkCard()
+                    .verticalEdgeFade(listScroll)
+                    .verticalScroll(listScroll)
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                header()
+                Text(
+                    "Categories",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = LocalGlassPalette.current.inkMuted,
+                )
+                Category.entries.forEach { category ->
+                    GlassFolderRow(
+                        title = category.label,
+                        subtitle = category.contents,
+                        accent = category.accent,
+                        // The list is invisible (alpha 0) while a folder is open; don't let a
+                        // tap on that invisible list open another one underneath.
+                        onClick = { if (openCategory == null) openCategoryFolder(category) },
+                    )
+                }
+            }
+
+            // One level deeper: the open category's cards, on top of the list.
+            openCategory?.let { category ->
+                key(category) {
+                    val folderScroll = rememberScrollState()
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { translationX = (1f - openProgress.value) * size.width }
+                            .verticalEdgeFade(folderScroll)
+                            .verticalScroll(folderScroll)
+                            .padding(horizontal = 16.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            GlassChip("‹  Categories", onClick = { closeCategoryFolder() })
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                category.label,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                        categoryCards(category)
                     }
                 }
             }
@@ -972,6 +1083,10 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
 
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
+    // System back (button or edge gesture) closes an open landscape folder before it would
+    // leave the app.
+    BackHandler(enabled = isLandscape && openCategory != null) { closeCategoryFolder() }
+
     // A thin vertical gradient standing in for a hard divider between side-by-side panes.
     val verticalDivider: @Composable () -> Unit = {
         Box(
@@ -1013,33 +1128,19 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
             },
         ) {
             if (isLandscape) {
-                // A Finder-style sidebar picks the category; a middle pane shows its cards;
-                // a full-height "monitor" pane on the right carries everything that's read
-                // rather than tapped. Each scrolling pane scrolls on its own.
+                // Left: the folder-style category navigator (categories -> cards). Right: a
+                // full-height "monitor" pane with everything that's read rather than tapped.
+                // Each pane scrolls on its own.
                 Row(Modifier.fillMaxSize()) {
-                    sidebarNav()
-                    verticalDivider()
-                    val middleScroll = rememberScrollState()
-                    Column(
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .width(280.dp)
-                            .verticalScroll(middleScroll)
-                            .verticalEdgeFade(middleScroll)
-                            .padding(horizontal = 16.dp, vertical = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
-                    ) {
-                        header()
-                        categoryContent()
-                    }
+                    landscapeNavigator()
                     verticalDivider()
                     val infoScroll = rememberScrollState()
                     Column(
                         modifier = Modifier
                             .fillMaxHeight()
                             .weight(1f)
-                            .verticalScroll(infoScroll)
                             .verticalEdgeFade(infoScroll)
+                            .verticalScroll(infoScroll)
                             .padding(horizontal = 16.dp, vertical = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
@@ -1055,8 +1156,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .verticalScroll(portraitScroll)
                         .verticalEdgeFade(portraitScroll)
+                        .verticalScroll(portraitScroll)
                         .padding(horizontal = 20.dp, vertical = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp),
                 ) {
@@ -1100,14 +1201,22 @@ private fun formatRelativeTime(epochMillis: Long): String {
 // no matter what's behind it. Each edge only fades while there is more content hidden that way.
 // CompositingStrategy.Offscreen renders the content to a buffer first so the mask only cuts into
 // this content, not whatever is drawn behind it in the rest of the screen.
+//
+// ORDER MATTERS: put these BEFORE .verticalScroll()/.horizontalScroll() in the chain. Placed
+// after, they'd wrap the full (unclipped, scrolled) content instead of the visible viewport,
+// and the fades would sit off-screen at the content's own top/bottom.
 
-private fun Modifier.verticalEdgeFade(state: ScrollState, edgeSize: Dp = 28.dp): Modifier =
+private fun Modifier.verticalEdgeFade(state: ScrollState, edgeSize: Dp = 32.dp): Modifier =
     graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen).drawWithContent {
         drawContent()
-        val fadePx = edgeSize.toPx()
+        val fadePx = edgeSize.toPx().coerceAtMost(size.height / 2f)
         if (state.value > 0) {
             drawRect(
-                brush = Brush.verticalGradient(colors = listOf(Color.Transparent, Color.Black), endY = fadePx),
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color.Transparent, Color.Black),
+                    startY = 0f,
+                    endY = fadePx,
+                ),
                 blendMode = BlendMode.DstIn,
             )
         }
@@ -1116,19 +1225,24 @@ private fun Modifier.verticalEdgeFade(state: ScrollState, edgeSize: Dp = 28.dp):
                 brush = Brush.verticalGradient(
                     colors = listOf(Color.Black, Color.Transparent),
                     startY = size.height - fadePx,
+                    endY = size.height,
                 ),
                 blendMode = BlendMode.DstIn,
             )
         }
     }
 
-private fun Modifier.horizontalEdgeFade(state: ScrollState, edgeSize: Dp = 20.dp): Modifier =
+private fun Modifier.horizontalEdgeFade(state: ScrollState, edgeSize: Dp = 28.dp): Modifier =
     graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen).drawWithContent {
         drawContent()
-        val fadePx = edgeSize.toPx()
+        val fadePx = edgeSize.toPx().coerceAtMost(size.width / 2f)
         if (state.value > 0) {
             drawRect(
-                brush = Brush.horizontalGradient(colors = listOf(Color.Transparent, Color.Black), endX = fadePx),
+                brush = Brush.horizontalGradient(
+                    colors = listOf(Color.Transparent, Color.Black),
+                    startX = 0f,
+                    endX = fadePx,
+                ),
                 blendMode = BlendMode.DstIn,
             )
         }
@@ -1137,6 +1251,7 @@ private fun Modifier.horizontalEdgeFade(state: ScrollState, edgeSize: Dp = 20.dp
                 brush = Brush.horizontalGradient(
                     colors = listOf(Color.Black, Color.Transparent),
                     startX = size.width - fadePx,
+                    endX = size.width,
                 ),
                 blendMode = BlendMode.DstIn,
             )
