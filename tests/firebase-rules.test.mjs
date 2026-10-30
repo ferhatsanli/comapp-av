@@ -364,6 +364,21 @@ try {
     }));
     await assertFails(update(command(piDb, "ping-not-mode-set"), { status: "SUCCESS", result: "MODE_SET", processingAt: null }));
   });
+  await check("SPEAK may carry language tr/en (only SPEAK), and the agent can't change it", async () => {
+    const speak = (over) => ({ action: "SPEAK", senderUid: ANDROID, targetUid: PI, status: "PENDING", text: "hi", ...over });
+    await assertSucceeds(set(command(androidDb, "sp-none"), speak({})));
+    await assertSucceeds(set(command(androidDb, "sp-tr"), speak({ language: "tr" })));
+    await assertSucceeds(set(command(androidDb, "sp-en"), speak({ language: "en" })));
+    await assertFails(set(command(androidDb, "sp-de"), speak({ language: "de" })));
+    await assertFails(set(command(androidDb, "ping-lang"), {
+      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING", language: "en",
+    }));
+    await assertFails(update(command(piDb, "sp-en"), { status: "PROCESSING", processingAt: Date.now(), language: "tr" }));
+    await assertSucceeds(update(command(piDb, "sp-en"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertSucceeds(update(command(piDb, "sp-en"), { status: "SUCCESS", result: "SPOKEN", processingAt: null }));
+    const done = await assertSucceeds(get(command(androidDb, "sp-en")));
+    assert.equal(done.val().language, "en");
+  });
   await check("SYSTEM_INFO has no extra fields and completes with REPORTED", async () => {
     await assertSucceeds(set(command(androidDb, "info-ok"), {
       action: "SYSTEM_INFO", senderUid: ANDROID, targetUid: PI, status: "PENDING",

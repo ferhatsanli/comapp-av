@@ -1,6 +1,7 @@
 package com.ferhat.comappav
 
 import android.content.Intent
+import android.content.Context
 import android.content.res.Configuration
 import android.os.Bundle
 import android.widget.Toast
@@ -43,6 +44,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import com.ferhat.comappav.ui.glass.GlassContentButton
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -190,6 +201,13 @@ private enum class ConsoleTool(val label: String, val description: String) {
  * Console tool, the "On the network" device list, or the "On the server computer" download list.
  */
 private enum class RightPaneView { LOGS, NETWORK_DEVICES, DOWNLOADS }
+
+/** Where the Speak language choice is kept on the phone. */
+private const val SPEECH_PREFS = "speech"
+private const val SPEECH_LANGUAGE_KEY = "language"
+
+/** How long to wait for the keyboard to slide in before scrolling the Speak field above it. */
+private const val SPEAK_FIELD_SCROLL_DELAY_MILLIS = 300L
 
 /** Key of the category order in [CardOrderStore]; each category's cards are saved under its name. */
 private const val CATEGORY_ORDER_KEY = "categories"
@@ -426,6 +444,17 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val orderStore = remember { CardOrderStore(context) }
+    // Speak: the language the laptop reads the text in, remembered on the phone.
+    val speechPrefs = remember { context.getSharedPreferences(SPEECH_PREFS, Context.MODE_PRIVATE) }
+    var speakLanguage by remember {
+        mutableStateOf(
+            if (speechPrefs.getString(SPEECH_LANGUAGE_KEY, null) == PingProtocol.LANGUAGE_EN) {
+                PingProtocol.LANGUAGE_EN
+            } else {
+                PingProtocol.LANGUAGE_TR
+            },
+        )
+    }
     val savedOrders = remember { orderStore.load() }
     var reordering by remember { mutableStateOf(false) }
     var categoryOrder by remember {
@@ -964,21 +993,73 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
     }
 
+    // Speak: one line of text (Enter sends it), and a flag button that switches the language the
+    // laptop reads it in. While typing, the field is scrolled up above the keyboard.
     val speakCard: @Composable () -> Unit = {
+        val english = speakLanguage == PingProtocol.LANGUAGE_EN
+        val sendSpeak = {
+            if (canSend && speakText.isNotBlank()) {
+                sendCommand(
+                    PingProtocol.SPEAK_ACTION,
+                    PingProtocol.speakCommand(user.uid, speakText.trim(), speakLanguage),
+                )
+            }
+        }
+        val speakField = remember { BringIntoViewRequester() }
+        var speakFocused by remember { mutableStateOf(false) }
+        val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+        LaunchedEffect(speakFocused, imeBottom > 0) {
+            if (speakFocused) {
+                delay(SPEAK_FIELD_SCROLL_DELAY_MILLIS) // let the keyboard finish sliding in
+                speakField.bringIntoView()
+            }
+        }
         GlassCommandCard(
             title = "Speak",
             tag = PingProtocol.SPEAK_ACTION,
             description = "The laptop reads your text out loud.",
             accent = GlassColors.Indigo,
         ) {
-            OutlinedTextField(
-                value = speakText,
-                onValueChange = { if (it.length <= PingProtocol.MAX_SPEAK_LENGTH) speakText = it },
-                label = { Text("Text to speak on the laptop") },
-                shape = GlassFieldShape,
-                colors = glassTextFieldColors(),
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .bringIntoViewRequester(speakField),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = speakText,
+                    onValueChange = { value ->
+                        // One line only: a pasted line break becomes a space.
+                        val line = value.replace('\n', ' ').replace('\r', ' ')
+                        if (line.length <= PingProtocol.MAX_SPEAK_LENGTH) speakText = line
+                    },
+                    label = { Text(if (english) "Text to speak (English)" else "Text to speak (Türkçe)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { sendSpeak() }),
+                    shape = GlassFieldShape,
+                    colors = glassTextFieldColors(),
+                    modifier = Modifier
+                        .weight(1f)
+                        .onFocusChanged { speakFocused = it.isFocused },
+                )
+                Spacer(Modifier.width(8.dp))
+                GlassContentButton(
+                    description = if (english) {
+                        "Speech language: English. Tap for Turkish."
+                    } else {
+                        "Speech language: Turkish. Tap for English."
+                    },
+                    onClick = {
+                        val next = if (english) PingProtocol.LANGUAGE_TR else PingProtocol.LANGUAGE_EN
+                        speakLanguage = next
+                        speechPrefs.edit().putString(SPEECH_LANGUAGE_KEY, next).apply()
+                        AppLog.info("Speak", "Language set to ${if (next == PingProtocol.LANGUAGE_EN) "English" else "Turkish"}")
+                    },
+                ) {
+                    Text(if (english) "\uD83C\uDDEC\uD83C\uDDE7" else "\uD83C\uDDF9\uD83C\uDDF7", fontSize = 18.sp)
+                }
+            }
             Text(
                 "${speakText.length}/${PingProtocol.MAX_SPEAK_LENGTH}",
                 style = MaterialTheme.typography.labelSmall,
@@ -989,12 +1070,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 accent = GlassColors.Indigo,
                 enabled = canSend && speakText.isNotBlank(),
                 loading = sending && commandAction == PingProtocol.SPEAK_ACTION,
-                onClick = {
-                    sendCommand(
-                        PingProtocol.SPEAK_ACTION,
-                        PingProtocol.speakCommand(user.uid, speakText.trim()),
-                    )
-                },
+                onClick = { sendSpeak() },
             )
         }
     }
@@ -1976,7 +2052,12 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
             state = pullState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .padding(padding)
+                // The keyboard isn't part of the Scaffold's padding (the app draws edge to edge),
+                // so the content shrinks above it here - otherwise a text field near the bottom
+                // ends up hidden behind the keyboard.
+                .consumeWindowInsets(padding)
+                .imePadding(),
             indicator = {
                 PullToRefreshDefaults.Indicator(
                     state = pullState,

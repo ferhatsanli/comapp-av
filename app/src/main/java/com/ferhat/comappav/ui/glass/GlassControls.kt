@@ -290,6 +290,32 @@ fun GlassIconButton(
 }
 
 /**
+ * Same small square glass button as [GlassIconButton], with any content inside instead of a
+ * drawn symbol (an emoji flag, for instance).
+ */
+@Composable
+fun GlassContentButton(
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val palette = LocalGlassPalette.current
+    Box(
+        modifier
+            .size(32.dp)
+            .clip(ChipShape)
+            .background(palette.chipFill)
+            .border(1.dp, Brush.linearGradient(listOf(palette.rimTop, palette.rimBottom)), ChipShape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) {
+        content()
+    }
+}
+
+/**
  * "Reorder" symbol: three horizontal lines, with a chevron above them pointing up and one
  * below pointing down - a ">" / "<" turned 90 degrees.
  */

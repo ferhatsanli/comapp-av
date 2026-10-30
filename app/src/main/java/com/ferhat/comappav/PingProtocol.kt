@@ -16,6 +16,8 @@ internal object PingProtocol {
     const val MODE_POWERSAVE = "POWERSAVE"
     const val MAX_SLEEP_MINUTES = 1440
     const val MAX_SPEAK_LENGTH = 300
+    const val LANGUAGE_TR = "tr"
+    const val LANGUAGE_EN = "en"
 
     fun pendingCommand(senderUid: String): Map<String, String> = mapOf(
         "action" to ACTION,
@@ -31,12 +33,14 @@ internal object PingProtocol {
         "status" to "PENDING",
     )
 
-    fun speakCommand(senderUid: String, text: String): Map<String, String> = mapOf(
+    /** [language] is [LANGUAGE_TR] or [LANGUAGE_EN]; the agent picks the matching voice. */
+    fun speakCommand(senderUid: String, text: String, language: String = LANGUAGE_TR): Map<String, String> = mapOf(
         "action" to SPEAK_ACTION,
         "senderUid" to senderUid,
         "targetUid" to PI_UID,
         "status" to "PENDING",
         "text" to text.take(MAX_SPEAK_LENGTH),
+        "language" to if (language == LANGUAGE_EN) LANGUAGE_EN else LANGUAGE_TR,
     )
 
     /** Without [durationMinutes] the laptop sleeps until the daily morning wake-up. */

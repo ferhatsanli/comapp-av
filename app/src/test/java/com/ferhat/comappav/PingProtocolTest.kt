@@ -29,4 +29,14 @@ class PingProtocolTest {
             PingProtocol.systemInfoCommand(PingProtocol.ANDROID_UID),
         )
     }
+
+    @Test
+    fun speakCommandCarriesTheLanguage() {
+        val english = PingProtocol.speakCommand(PingProtocol.ANDROID_UID, "Hello", PingProtocol.LANGUAGE_EN)
+        assertEquals("en", english["language"])
+        assertEquals("Hello", english["text"])
+        assertEquals("tr", PingProtocol.speakCommand(PingProtocol.ANDROID_UID, "Merhaba")["language"])
+        // Anything unknown falls back to Turkish rather than sending a value the Rules refuse.
+        assertEquals("tr", PingProtocol.speakCommand(PingProtocol.ANDROID_UID, "Hallo", "de")["language"])
+    }
 }
