@@ -462,6 +462,48 @@ try {
     await assertSucceeds(get(ref(piDb, "settings/downloadLimitMbps")));
   });
 
+  await check("TAILSCALE carries state UP/DOWN and SYSTEM_UPDATE nothing; their own results and errors", async () => {
+    const cmd = (action, over) => ({ action, senderUid: ANDROID, targetUid: PI, status: "PENDING", ...over });
+    await assertSucceeds(set(command(androidDb, "ts-up"), cmd("TAILSCALE", { state: "UP" })));
+    await assertFails(set(command(androidDb, "ts-none"), cmd("TAILSCALE")));
+    await assertFails(set(command(androidDb, "ts-on"), cmd("TAILSCALE", { state: "ON" })));
+    await assertFails(set(command(androidDb, "ping-state"), cmd("PING", { state: "UP" })));
+    await assertFails(update(command(piDb, "ts-up"), { status: "PROCESSING", processingAt: Date.now(), state: "DOWN" }));
+    await assertSucceeds(update(command(piDb, "ts-up"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertFails(update(command(piDb, "ts-up"), { status: "FAILED", errorCode: "UPDATE_RUNNING", processingAt: null }));
+    await assertSucceeds(update(command(piDb, "ts-up"), { status: "SUCCESS", result: "TAILSCALE_SET", processingAt: null }));
+
+    await assertSucceeds(set(command(androidDb, "upd"), cmd("SYSTEM_UPDATE")));
+    await assertFails(set(command(androidDb, "upd-text"), cmd("SYSTEM_UPDATE", { text: "x" })));
+    await assertSucceeds(update(command(piDb, "upd"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertFails(update(command(piDb, "upd"), { status: "SUCCESS", result: "PONG", processingAt: null }));
+    await assertSucceeds(update(command(piDb, "upd"), { status: "SUCCESS", result: "UPDATE_STARTED", processingAt: null }));
+
+    await assertSucceeds(set(command(androidDb, "upd-busy"), cmd("SYSTEM_UPDATE")));
+    await assertSucceeds(update(command(piDb, "upd-busy"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertSucceeds(update(command(piDb, "upd-busy"), { status: "FAILED", errorCode: "UPDATE_RUNNING", processingAt: null }));
+  });
+
+  await check("Pi keeps /power/history and /system/update; Android reads both", async () => {
+    const key = String(Date.now());
+    await assertSucceeds(set(ref(piDb, `power/history/${key}`), { cpu: 12.5, w: 7.1 }));
+    await assertFails(set(ref(piDb, "power/history/abc"), { cpu: 1 }));
+    await assertFails(set(ref(piDb, `power/history/${key}`), { cpu: 1, tempC: 40 }));
+    await assertFails(set(ref(androidDb, `power/history/${key}`), { cpu: 1 }));
+    await assertSucceeds(get(ref(androidDb, "power/history")));
+    await assertSucceeds(set(ref(piDb, `power/history/${key}`), null));
+
+    await assertSucceeds(set(ref(piDb, "system/update"), {
+      state: "RUNNING", phase: "INSTALLING", percent: 60, done: 3, total: 6, packages: 3, startedAt: Date.now(),
+    }));
+    await assertFails(set(ref(piDb, "system/update"), { state: "RUNNING", phase: "X", percent: 1 }));
+    await assertFails(set(ref(androidDb, "system/update"), { state: "RUNNING", phase: "INSTALLING", percent: 1 }));
+    await assertSucceeds(get(ref(androidDb, "system/update")));
+
+    await assertSucceeds(set(ref(piDb, "power/latest"), { reportedAt: Date.now(), tailscale: "RUNNING" }));
+    await assertFails(set(ref(piDb, "power/latest"), { reportedAt: Date.now(), tailscale: "ON" }));
+  });
+
   await check("Only the Pi writes /network/latest, and only Android reads it, with required shape", async () => {
     await assertFails(get(ref(anonymousDb, "network/latest")));
     await assertFails(set(ref(piDb, "network/latest"), {

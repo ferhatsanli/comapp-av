@@ -39,4 +39,32 @@ class PingProtocolTest {
         // Anything unknown falls back to Turkish rather than sending a value the Rules refuse.
         assertEquals("tr", PingProtocol.speakCommand(PingProtocol.ANDROID_UID, "Hallo", "de")["language"])
     }
+
+    @Test
+    fun tailscaleAndUpdateCommandsMatchTheRules() {
+        assertEquals("UP", PingProtocol.tailscaleCommand(PingProtocol.ANDROID_UID, true)["state"])
+        assertEquals("DOWN", PingProtocol.tailscaleCommand(PingProtocol.ANDROID_UID, false)["state"])
+        assertEquals("TAILSCALE", PingProtocol.tailscaleCommand(PingProtocol.ANDROID_UID, true)["action"])
+        assertEquals(
+            mapOf(
+                "action" to "SYSTEM_UPDATE",
+                "senderUid" to PingProtocol.ANDROID_UID,
+                "targetUid" to PingProtocol.PI_UID,
+                "status" to "PENDING",
+            ),
+            PingProtocol.systemUpdateCommand(PingProtocol.ANDROID_UID),
+        )
+    }
+
+    @Test
+    fun sharedErrorsAndTailscaleStatesHaveWords() {
+        for (code in listOf("NOT_PERMITTED", "UPDATE_RUNNING")) {
+            assert(PingProtocol.describeError(code) != null) { code }
+        }
+        assertEquals(null, PingProtocol.describeError("AGENT_ERROR"))
+        for (state in listOf("RUNNING", "STOPPED", "STARTING", "NEEDS_LOGIN", "DAEMON_OFF", "NOT_INSTALLED", "UNKNOWN")) {
+            assert(PingProtocol.tailscaleLabel(state) != null) { state }
+        }
+        assertEquals(null, PingProtocol.tailscaleLabel(null))
+    }
 }

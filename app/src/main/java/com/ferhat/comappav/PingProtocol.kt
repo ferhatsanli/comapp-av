@@ -12,6 +12,8 @@ internal object PingProtocol {
     const val SHUTDOWN_ACTION = "SHUTDOWN"
     const val POWER_MODE_ACTION = "POWER_MODE"
     const val SYSTEM_INFO_ACTION = "SYSTEM_INFO"
+    const val TAILSCALE_ACTION = "TAILSCALE"
+    const val SYSTEM_UPDATE_ACTION = "SYSTEM_UPDATE"
     const val MODE_PERFORMANCE = "PERFORMANCE"
     const val MODE_POWERSAVE = "POWERSAVE"
     const val MAX_SLEEP_MINUTES = 1440
@@ -66,6 +68,42 @@ internal object PingProtocol {
         "status" to "PENDING",
         "createdAt" to ServerValue.TIMESTAMP,
     )
+
+    /** Turns Tailscale on the server computer on ([on]) or off. */
+    fun tailscaleCommand(senderUid: String, on: Boolean): Map<String, String> = mapOf(
+        "action" to TAILSCALE_ACTION,
+        "senderUid" to senderUid,
+        "targetUid" to PI_UID,
+        "status" to "PENDING",
+        "state" to if (on) "UP" else "DOWN",
+    )
+
+    /** Starts installing every available update on the server computer (dnf upgrade). */
+    fun systemUpdateCommand(senderUid: String): Map<String, String> = mapOf(
+        "action" to SYSTEM_UPDATE_ACTION,
+        "senderUid" to senderUid,
+        "targetUid" to PI_UID,
+        "status" to "PENDING",
+    )
+
+    /** Error codes shared by several commands, in words; null for ones that need no explanation. */
+    fun describeError(code: String?): String? = when (code) {
+        "NOT_PERMITTED" -> "The server computer isn't set up for this yet - run install-remote-admin.sh on it once."
+        "UPDATE_RUNNING" -> "A system update is running on the server computer. Try again when it has finished."
+        else -> null
+    }
+
+    /** "Tailscale" line of System Info for a /power/latest tailscale value. */
+    fun tailscaleLabel(state: String?): String? = when (state) {
+        "RUNNING" -> "Connected"
+        "STOPPED" -> "Off"
+        "STARTING" -> "Starting"
+        "NEEDS_LOGIN" -> "Needs login"
+        "DAEMON_OFF" -> "Off (service stopped)"
+        "NOT_INSTALLED" -> "Not installed"
+        "UNKNOWN" -> "Unknown"
+        else -> null
+    }
 
     /** Asks the agent to measure and publish /power/latest right now. */
     fun systemInfoCommand(senderUid: String): Map<String, String> = mapOf(

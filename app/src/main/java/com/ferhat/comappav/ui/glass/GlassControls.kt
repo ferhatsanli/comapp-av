@@ -1,6 +1,19 @@
 package com.ferhat.comappav.ui.glass
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -59,8 +72,126 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 // macOS push buttons are rounded rectangles, not pills.
-private val ButtonShape = RoundedCornerShape(10.dp)
+private val ButtonCornerRadius = 10.dp
+private val ButtonShape = RoundedCornerShape(ButtonCornerRadius)
 private val ChipShape = RoundedCornerShape(8.dp)
+
+/**
+ * "Working on it": a short beam of white light running clockwise around the edge of whatever it
+ * covers (a button, a row), over a soft glow. The beam is about a fifth of the way round. It
+ * fades in when [active] turns on and out when it turns off; while off it draws nothing and
+ * runs no animation.
+ */
+@Composable
+fun OrbitingLight(active: Boolean, cornerRadius: Dp, modifier: Modifier = Modifier, color: Color = Color.White) {
+    val strength by animateFloatAsState(
+        targetValue = if (active) 1f else 0f,
+        animationSpec = tween(durationMillis = 300),
+        label = "orbitStrength",
+    )
+    if (strength == 0f) return
+    val turn = rememberInfiniteTransition(label = "orbit")
+    val progress by turn.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(durationMillis = ORBIT_MILLIS, easing = LinearEasing)),
+        label = "orbitProgress",
+    )
+    val measure = remember { PathMeasure() }
+    val piece = remember { Path() }
+    Canvas(modifier) {
+        val core = 2.dp.toPx()
+        val inset = core / 2f
+        val radius = (cornerRadius.toPx() - inset).coerceAtLeast(0f)
+        val outline = Path().apply {
+            addRoundRect(
+                RoundRect(
+                    left = inset, top = inset, right = size.width - inset, bottom = size.height - inset,
+                    cornerRadius = CornerRadius(radius, radius),
+                ),
+                Path.Direction.Clockwise,
+            )
+        }
+        measure.setPath(outline, true)
+        val length = measure.length
+        if (length <= 0f) return@Canvas
+        val beam = length * ORBIT_BEAM_FRACTION
+        val head = progress * length
+        // Brightest at the head, fading to nothing at the tail.
+        for (i in 0 until ORBIT_PIECES) {
+            val from = head - beam * (i + 1) / ORBIT_PIECES
+            val to = head - beam * i / ORBIT_PIECES
+            val fade = (1f - i.toFloat() / ORBIT_PIECES) * strength
+            for ((start, stop) in wrapSegment(from, to, length)) {
+                piece.reset()
+                if (!measure.getSegment(start, stop, piece, true)) continue
+                drawPath(piece, color.copy(alpha = 0.22f * fade), style = Stroke(width = core * 3.5f, cap = StrokeCap.Round))
+                drawPath(piece, color.copy(alpha = fade), style = Stroke(width = core, cap = StrokeCap.Round))
+            }
+        }
+    }
+}
+
+/** [from, to] along a closed outline of [length], split in two where it crosses the start. */
+private fun wrapSegment(from: Float, to: Float, length: Float): List<Pair<Float, Float>> {
+    val a = ((from % length) + length) % length
+    val b = ((to % length) + length) % length
+    return if (a <= b) listOf(a to b) else listOf(a to length, 0f to b)
+}
+
+private const val ORBIT_MILLIS = 1600
+private const val ORBIT_BEAM_FRACTION = 0.2f
+private const val ORBIT_PIECES = 14
+
+/**
+ * A row like [GlassFolderRow] holding just a title and an on/off switch. [working] runs the
+ * orbiting light around it while a change is on its way.
+ */
+@Composable
+fun GlassSwitchRow(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    enabled: Boolean = true,
+    working: Boolean = false,
+    accent: Color = GlassColors.Blue,
+) {
+    val palette = LocalGlassPalette.current
+    val shape = RoundedCornerShape(SwitchRowCornerRadius)
+    Box(modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(shape)
+                .background(palette.chipFill, shape)
+                .border(1.dp, Brush.linearGradient(listOf(palette.rimTop, palette.rimBottom)), shape)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, color = palette.ink, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                if (subtitle != null) {
+                    Text(subtitle, color = palette.inkMuted, fontSize = 12.sp)
+                }
+            }
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                enabled = enabled,
+                colors = SwitchDefaults.colors(
+                    checkedTrackColor = accent,
+                    checkedThumbColor = Color.White,
+                    uncheckedTrackColor = palette.chipFill,
+                ),
+            )
+        }
+        OrbitingLight(active = working, cornerRadius = SwitchRowCornerRadius, modifier = Modifier.matchParentSize())
+    }
+}
+
+private val SwitchRowCornerRadius = 16.dp
 
 /**
  * A single line of text that shrinks its own font, step by step, until it fits - so a label in a
@@ -111,12 +242,32 @@ fun GlassButton(
     loading: Boolean = false,
     prominent: Boolean = true,
     accent: Color = GlassColors.Neutral,
+    working: Boolean = false,
 ) {
-    val palette = LocalGlassPalette.current
     Box(
         modifier
             .fillMaxWidth()
-            .height(44.dp)
+            .height(44.dp),
+    ) {
+        GlassButtonFace(text, onClick, enabled, loading, prominent, accent)
+        // On top of the (possibly dimmed) face, so it shows at full strength on a disabled button.
+        OrbitingLight(active = working, cornerRadius = ButtonCornerRadius, modifier = Modifier.matchParentSize())
+    }
+}
+
+@Composable
+private fun GlassButtonFace(
+    text: String,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    loading: Boolean,
+    prominent: Boolean,
+    accent: Color,
+) {
+    val palette = LocalGlassPalette.current
+    Box(
+        Modifier
+            .fillMaxSize()
             .alpha(if (enabled) 1f else 0.45f)
             .clip(ButtonShape)
             .drawBehind {

@@ -129,6 +129,9 @@ import com.ferhat.comappav.ui.glass.GlassIconButton
 import com.ferhat.comappav.ui.glass.GlassFieldShape
 import com.ferhat.comappav.ui.glass.GlassNavSurface
 import com.ferhat.comappav.ui.glass.GlassProgressBar
+import com.ferhat.comappav.ui.glass.ChartPoint
+import com.ferhat.comappav.ui.glass.GlassLineChart
+import com.ferhat.comappav.ui.glass.GlassSwitchRow
 import com.ferhat.comappav.ui.glass.GlassScreen
 import com.ferhat.comappav.ui.glass.LocalGlassPalette
 import com.ferhat.comappav.ui.glass.ReorderableColumn
@@ -152,6 +155,7 @@ private data class NetworkDevice(val mac: String, val ip: String, val name: Stri
 /** Every card that can be moved around in reorder mode; the names are what gets saved. */
 private enum class CardId {
     PING, SPEAK, SLEEP, SHUTDOWN, POWER_MODE, SCAN, DEVICES, DOWNLOAD_ADD, DOWNLOAD_LIST, DOWNLOAD_LIMIT, CONSOLE,
+    TAILSCALE, SYSTEM_UPDATE, POWER_HISTORY,
 }
 
 /**
@@ -166,18 +170,21 @@ private enum class Category(
     val icon: DrawScope.(Color) -> Unit,
 ) {
     COMMANDS(
-        "Commands", "Ping · Speak", GlassColors.Blue, listOf(CardId.PING, CardId.SPEAK),
+        "Commands", "Speak · Update server system", GlassColors.Blue, listOf(CardId.SPEAK, CardId.SYSTEM_UPDATE),
         { tint -> drawCommandsIcon(tint) },
     ),
     POWER(
         "Power",
-        "Sleep · Shutdown · Power mode",
+        "Sleep · Shutdown · Power mode · History",
         GlassColors.Amber,
-        listOf(CardId.SLEEP, CardId.SHUTDOWN, CardId.POWER_MODE),
+        listOf(CardId.SLEEP, CardId.SHUTDOWN, CardId.POWER_MODE, CardId.POWER_HISTORY),
         { tint -> drawPowerIcon(tint) },
     ),
     NETWORK(
-        "Network", "Scan · Devices on the network", GlassColors.Neutral, listOf(CardId.SCAN, CardId.DEVICES),
+        "Network",
+        "Ping · Scan · Tailscale · Devices",
+        GlassColors.Neutral,
+        listOf(CardId.PING, CardId.SCAN, CardId.TAILSCALE, CardId.DEVICES),
         { tint -> drawNetworkIcon(tint) },
     ),
     DOWNLOADS(
@@ -242,7 +249,21 @@ private data class PowerSnapshot(
     val fanRpm: Long?,
     val ecTempC: Long?,
     val powerMode: String?,
+    val tailscale: String?,
 )
+
+/** One /power/history sample: CPU usage (%) and package power (W), either may be missing. */
+private data class PowerSample(val timeMs: Long, val cpu: Float?, val watts: Float?)
+
+/** The ranges the Power history charts can show. */
+private enum class HistoryRange(val label: String, val millis: Long) {
+    HOUR("1 h", 60 * 60_000L),
+    SIX_HOURS("6 h", 6 * 60 * 60_000L),
+    DAY("24 h", 24 * 60 * 60_000L),
+}
+
+/** How long the Apply button keeps its light while waiting for the server to pick up the new limit. */
+private const val LIMIT_APPLY_WAIT_MILLIS = 30_000L
 
 private const val DATABASE_URL =
     "https://comapp-av-default-rtdb.europe-west1.firebasedatabase.app"
@@ -487,6 +508,15 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var savedLimitMbps by remember { mutableStateOf<Int?>(null) }
     var chosenLimitMbps by rememberSaveable { mutableStateOf<Int?>(null) }
     var applyingLimit by remember { mutableStateOf(false) }
+    // The limit was saved and the server hasn't confirmed it yet (lights the Apply button).
+    var limitPending by remember { mutableStateOf(false) }
+    // Which button sent the command that's on its way, so only that one shows the light.
+    var activeButton by remember { mutableStateOf<String?>(null) }
+    // Tailscale: the state asked for while its command is on its way.
+    var requestedTailscale by remember { mutableStateOf<Boolean?>(null) }
+    var powerHistory by remember { mutableStateOf<List<PowerSample>>(emptyList()) }
+    var historyRange by rememberSaveable { mutableStateOf(HistoryRange.SIX_HOURS) }
+    var systemUpdate by remember { mutableStateOf<SystemUpdateStatus?>(null) }
     var downloadLink by rememberSaveable { mutableStateOf("") }
     val incomingDownload by IncomingDownloads.pending
     val sleepTotal = (sleepHours.toIntOrNull() ?: 0) * 60 + (sleepMinutes.toIntOrNull() ?: 0)
@@ -495,6 +525,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     val pullState = rememberPullToRefreshState()
     val scope = rememberCoroutineScope()
     val authorized = user.uid == PingProtocol.ANDROID_UID
+    // A command is on its way or being carried out by the agent.
+    val commandPending = sending || commandStatus == "PENDING" || commandStatus == "PROCESSING"
     val canSend = authorized &&
         connected == true &&
         !sending &&
@@ -616,6 +648,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         database.getReference("settings/downloadLimitMbps").setValue(mbps)
             .addOnSuccessListener {
                 applyingLimit = false
+                limitPending = true
                 AppLog.info("Downloads", "Speed limit set to ${DownloadProtocol.limitLabel(mbps)}")
             }
             .addOnFailureListener { exception ->
@@ -731,6 +764,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     fanRpm = system.child("fanRpm").getValue(Long::class.java),
                     ecTempC = system.child("ecTempC").getValue(Long::class.java),
                     powerMode = snapshot.child("powerMode").getValue(String::class.java),
+                    tailscale = snapshot.child("tailscale").getValue(String::class.java),
                 )
             }
 
@@ -741,6 +775,81 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
         powerRef.addValueEventListener(listener)
         onDispose { powerRef.removeEventListener(listener) }
+    }
+
+    // The last day of power samples for the Power history charts.
+    DisposableEffect(database) {
+        val since = System.currentTimeMillis() - HistoryRange.DAY.millis
+        val historyQuery = database.getReference("power/history").orderByKey().startAt(since.toString())
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                powerHistory = snapshot.children.mapNotNull { sample ->
+                    val time = sample.key?.toLongOrNull() ?: return@mapNotNull null
+                    PowerSample(
+                        timeMs = time,
+                        cpu = sample.child("cpu").getValue(Double::class.java)?.toFloat(),
+                        watts = sample.child("w").getValue(Double::class.java)?.toFloat(),
+                    )
+                }.sortedBy { it.timeMs }
+            }
+
+            override fun onCancelled(databaseError: DatabaseError) {
+                AppLog.warn("Power", "Could not read the power history: ${databaseError.message}")
+            }
+        }
+        historyQuery.addValueEventListener(listener)
+        onDispose { historyQuery.removeEventListener(listener) }
+    }
+
+    DisposableEffect(database) {
+        val updateRef = database.getReference("system/update")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (!snapshot.exists()) {
+                    systemUpdate = null
+                    return
+                }
+                val previous = systemUpdate
+                val status = SystemUpdateStatus(
+                    state = snapshot.child("state").getValue(String::class.java) ?: return,
+                    phase = snapshot.child("phase").getValue(String::class.java) ?: "REFRESHING",
+                    percent = snapshot.child("percent").getValue(Long::class.java)?.toInt() ?: 0,
+                    done = snapshot.child("done").getValue(Long::class.java)?.toInt() ?: 0,
+                    total = snapshot.child("total").getValue(Long::class.java)?.toInt() ?: 0,
+                    packages = snapshot.child("packages").getValue(Long::class.java)?.toInt() ?: 0,
+                    startedAt = snapshot.child("startedAt").getValue(Long::class.java),
+                    finishedAt = snapshot.child("finishedAt").getValue(Long::class.java),
+                    error = snapshot.child("error").getValue(String::class.java),
+                    rebootRecommended = snapshot.child("rebootRecommended").getValue(Boolean::class.java),
+                )
+                systemUpdate = status
+                if (previous?.running == true && !status.running) {
+                    AppLog.info("Update", status.describe())
+                }
+            }
+
+            override fun onCancelled(databaseError: DatabaseError) {
+                AppLog.warn("Update", "Could not read the system update status: ${databaseError.message}")
+            }
+        }
+        updateRef.addValueEventListener(listener)
+        onDispose { updateRef.removeEventListener(listener) }
+    }
+
+    // The Apply button's light: until the server reports the new limit, or 30 s at most.
+    LaunchedEffect(limitPending, appliedLimitMbps, savedLimitMbps) {
+        if (!limitPending) return@LaunchedEffect
+        if (appliedLimitMbps != null && appliedLimitMbps == savedLimitMbps) {
+            limitPending = false
+        } else {
+            delay(LIMIT_APPLY_WAIT_MILLIS)
+            limitPending = false
+        }
+    }
+
+    // The Tailscale switch shows the asked-for state only while its command is on its way.
+    LaunchedEffect(commandPending) {
+        if (!commandPending) requestedTailscale = null
     }
 
     DisposableEffect(database) {
@@ -881,6 +990,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     enabled = canSend,
                     onClick = {
                         IncomingDownloads.pending.value = null
+                        activeButton = null
                         sendDownload(incoming)
                         selectedCategory = Category.DOWNLOADS
                         if (openCategory != null) openCategoryFolder(Category.DOWNLOADS)
@@ -1010,7 +1120,11 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 accent = GlassColors.Blue,
                 enabled = canSend,
                 loading = sending && commandAction == PingProtocol.ACTION,
-                onClick = { sendCommand(PingProtocol.ACTION, PingProtocol.pendingCommand(user.uid)) },
+                working = activeButton == "ping" && commandPending,
+                onClick = {
+                    activeButton = "ping"
+                    sendCommand(PingProtocol.ACTION, PingProtocol.pendingCommand(user.uid))
+                },
             )
         }
     }
@@ -1021,6 +1135,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         val english = speakLanguage == PingProtocol.LANGUAGE_EN
         val sendSpeak = {
             if (canSend && speakText.isNotBlank()) {
+                activeButton = "speak"
                 sendCommand(
                     PingProtocol.SPEAK_ACTION,
                     PingProtocol.speakCommand(user.uid, speakText.trim(), speakLanguage),
@@ -1113,6 +1228,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 accent = GlassColors.Indigo,
                 enabled = canSend && speakText.isNotBlank(),
                 loading = sending && commandAction == PingProtocol.SPEAK_ACTION,
+                working = activeButton == "speak" && commandPending,
                 onClick = { sendSpeak() },
             )
         }
@@ -1129,7 +1245,11 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 text = "Sleep until morning",
                 accent = GlassColors.Violet,
                 enabled = canSend,
-                onClick = { sleepRequest = SleepRequest(null) },
+                working = activeButton == "sleep-morning" && commandPending,
+                onClick = {
+                    activeButton = "sleep-morning"
+                    sleepRequest = SleepRequest(null)
+                },
             )
             Text(
                 "Or sleep for a set time",
@@ -1186,7 +1306,11 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 accent = GlassColors.Violet,
                 prominent = false,
                 enabled = canSend && sleepTotalValid,
-                onClick = { sleepRequest = SleepRequest(sleepTotal) },
+                working = activeButton == "sleep-timed" && commandPending,
+                onClick = {
+                    activeButton = "sleep-timed"
+                    sleepRequest = SleepRequest(sleepTotal)
+                },
             )
         }
     }
@@ -1203,7 +1327,11 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 accent = GlassColors.Neutral,
                 enabled = canSend,
                 loading = sending && commandAction == PingProtocol.SCAN_ACTION,
-                onClick = { sendCommand(PingProtocol.SCAN_ACTION, PingProtocol.scanCommand(user.uid)) },
+                working = activeButton == "scan" && commandPending,
+                onClick = {
+                    activeButton = "scan"
+                    sendCommand(PingProtocol.SCAN_ACTION, PingProtocol.scanCommand(user.uid))
+                },
             )
         }
     }
@@ -1220,7 +1348,11 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 accent = GlassColors.Red,
                 enabled = canSend,
                 loading = sending && commandAction == PingProtocol.SHUTDOWN_ACTION,
-                onClick = { shutdownRequested = true },
+                working = activeButton == "shutdown" && commandPending,
+                onClick = {
+                    activeButton = "shutdown"
+                    shutdownRequested = true
+                },
             )
         }
     }
@@ -1245,8 +1377,10 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     accent = GlassColors.Blue,
                     prominent = currentMode == PingProtocol.MODE_PERFORMANCE,
                     enabled = canSend && !busy,
-                    loading = busy && requestedPowerMode == PingProtocol.MODE_PERFORMANCE,
+                    loading = sending && requestedPowerMode == PingProtocol.MODE_PERFORMANCE,
+                    working = busy && requestedPowerMode == PingProtocol.MODE_PERFORMANCE,
                     onClick = {
+                        activeButton = null
                         requestedPowerMode = PingProtocol.MODE_PERFORMANCE
                         sendCommand(
                             PingProtocol.POWER_MODE_ACTION,
@@ -1260,8 +1394,10 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     accent = GlassColors.Amber,
                     prominent = currentMode == PingProtocol.MODE_POWERSAVE,
                     enabled = canSend && !busy,
-                    loading = busy && requestedPowerMode == PingProtocol.MODE_POWERSAVE,
+                    loading = sending && requestedPowerMode == PingProtocol.MODE_POWERSAVE,
+                    working = busy && requestedPowerMode == PingProtocol.MODE_POWERSAVE,
                     onClick = {
+                        activeButton = null
                         requestedPowerMode = PingProtocol.MODE_POWERSAVE
                         sendCommand(
                             PingProtocol.POWER_MODE_ACTION,
@@ -1477,8 +1613,12 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 text = "Choose a .torrent file",
                 accent = GlassColors.Indigo,
                 enabled = canSend,
-                loading = sending && commandAction == DownloadProtocol.ACTION,
-                onClick = { torrentPicker.launch(arrayOf("application/x-bittorrent", "application/octet-stream")) },
+                loading = sending && commandAction == DownloadProtocol.ACTION && activeButton == "torrent",
+                working = activeButton == "torrent" && commandPending,
+                onClick = {
+                    activeButton = "torrent"
+                    torrentPicker.launch(arrayOf("application/x-bittorrent", "application/octet-stream"))
+                },
             )
             OutlinedTextField(
                 value = downloadLink,
@@ -1502,8 +1642,10 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 accent = GlassColors.Indigo,
                 prominent = false,
                 enabled = canSend && linkRequest != null,
+                working = activeButton == "download-link" && commandPending,
                 onClick = {
                     linkRequest?.let {
+                        activeButton = "download-link"
                         sendDownload(it)
                         downloadLink = ""
                     }
@@ -1617,6 +1759,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 accent = GlassColors.Indigo,
                 enabled = authorized && connected == true && chosen != saved && !applyingLimit,
                 loading = applyingLimit,
+                working = limitPending,
                 onClick = { applyDownloadLimit(chosen) },
             )
             Text(
@@ -1629,6 +1772,134 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = LocalGlassPalette.current.inkMuted,
+            )
+        }
+    }
+
+    // Tailscale on the server computer: the switch follows what the agent last reported, and
+    // shows the asked-for position (with the running light) while the change is on its way.
+    val tailscaleRow: @Composable () -> Unit = {
+        val reported = powerSnapshot?.tailscale
+        val switching = commandPending && requestedTailscale != null
+        val on = requestedTailscale ?: (reported == "RUNNING" || reported == "STARTING")
+        val note = when {
+            switching -> if (on) "Turning on…" else "Turning off…"
+            reported == "NOT_INSTALLED" -> "Not installed on the server computer"
+            reported == "NEEDS_LOGIN" -> "Needs a login on the server computer"
+            reported == null -> "Waiting for the server computer's report…"
+            else -> null
+        }
+        GlassSwitchRow(
+            title = "Tailscale",
+            subtitle = note,
+            checked = on,
+            enabled = canSend && reported != null && reported != "NOT_INSTALLED",
+            working = switching,
+            accent = GlassColors.Blue,
+            onCheckedChange = { wanted ->
+                activeButton = null
+                requestedTailscale = wanted
+                AppLog.info("Tailscale", if (wanted) "Turning on" else "Turning off")
+                sendCommand(PingProtocol.TAILSCALE_ACTION, PingProtocol.tailscaleCommand(user.uid, wanted))
+            },
+        )
+    }
+
+    // Update server system: installs every available update (dnf upgrade) without a password;
+    // the thin bar under the button follows the agent's progress report.
+    val systemUpdateCard: @Composable () -> Unit = {
+        val status = systemUpdate
+        val palette = LocalGlassPalette.current
+        GlassCommandCard(
+            title = "Update server system",
+            tag = "UPDATE",
+            description = "Install every available update on the server computer (dnf upgrade).",
+            accent = GlassColors.Green,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                GlassButton(
+                    text = "Update",
+                    accent = GlassColors.Green,
+                    enabled = canSend && status?.running != true,
+                    loading = sending && activeButton == "update",
+                    working = activeButton == "update" && commandPending,
+                    onClick = {
+                        activeButton = "update"
+                        AppLog.info("Update", "System update requested")
+                        sendCommand(PingProtocol.SYSTEM_UPDATE_ACTION, PingProtocol.systemUpdateCommand(user.uid))
+                    },
+                )
+                GlassProgressBar(
+                    fraction = status?.fraction ?: 0f,
+                    accent = if (status?.state == "FAILED") GlassColors.Red else GlassColors.Green,
+                )
+            }
+            Text(
+                when {
+                    status == null -> "No update has run from the app yet."
+                    status.running -> status.describe()
+                    else -> status.describe() +
+                        (status.finishedAt?.let { " · ${formatRelativeTime(it)}" } ?: "")
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (status?.state == "FAILED") GlassColors.Red else palette.inkMuted,
+            )
+        }
+    }
+
+    // Power history: CPU usage and package power over the last hour, 6 hours or day, from the
+    // agent's once-a-minute samples.
+    val powerHistoryCard: @Composable () -> Unit = {
+        val palette = LocalGlassPalette.current
+        val now = powerHistory.lastOrNull()?.timeMs?.coerceAtLeast(System.currentTimeMillis())
+            ?: System.currentTimeMillis()
+        val start = now - historyRange.millis
+        val timeFormat = remember { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()) }
+        val startLabel = timeFormat.format(java.util.Date(start))
+        GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Amber, cornerRadius = 22.dp) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "History",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    HistoryRange.entries.forEach { range ->
+                        GlassChip(
+                            text = range.label,
+                            selected = historyRange == range,
+                            accent = GlassColors.Amber,
+                            onClick = { historyRange = range },
+                        )
+                    }
+                }
+            }
+            GlassLineChart(
+                title = "CPU usage",
+                points = powerHistory.mapNotNull { sample -> sample.cpu?.let { ChartPoint(sample.timeMs, it) } },
+                startMs = start,
+                endMs = now,
+                accent = GlassColors.Blue,
+                format = { "${"%.0f".format(it)}%" },
+                startLabel = startLabel,
+                endLabel = "now",
+                fixedMax = 100f,
+            )
+            GlassLineChart(
+                title = "Power draw",
+                points = powerHistory.mapNotNull { sample -> sample.watts?.let { ChartPoint(sample.timeMs, it) } },
+                startMs = start,
+                endMs = now,
+                accent = GlassColors.Amber,
+                format = { "${"%.1f".format(it)} W" },
+                startLabel = startLabel,
+                endLabel = "now",
+            )
+            Text(
+                "One sample a minute, kept for a day. CPU package only, like System Info.",
+                style = MaterialTheme.typography.labelSmall,
+                color = palette.inkFaint,
             )
         }
     }
@@ -1646,6 +1917,9 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
             CardId.DOWNLOAD_LIST -> downloadListCard()
             CardId.DOWNLOAD_LIMIT -> downloadLimitCard()
             CardId.CONSOLE -> consoleCard()
+            CardId.TAILSCALE -> tailscaleRow()
+            CardId.SYSTEM_UPDATE -> systemUpdateCard()
+            CardId.POWER_HISTORY -> powerHistoryCard()
         }
     }
 
@@ -1720,11 +1994,13 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
     }
 
-    // Landscape Network folder: Scan stays a plain, tappable card; "On the network" opens the
+    // Landscape Network folder: Ping, Scan and the Tailscale switch stay as they are; "On the network" opens the
     // device list as a window in the right pane instead, the same way a Console tool does.
     val networkTools: @Composable () -> Unit = {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            pingCard()
             scanCard()
+            tailscaleRow()
             if (networkDevices.isNotEmpty()) {
                 GlassFolderRow(
                     title = "On the network",
@@ -1983,6 +2259,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     power.batteryPercent?.let { Text("Battery: $it%") }
                     power.fanRpm?.let { Text("Fan: $it RPM") }
                     power.ecTempC?.let { Text("EC temperature: $it°C") }
+                    PingProtocol.tailscaleLabel(power.tailscale)?.let { Text("Tailscale: $it") }
                 }
                 Text(
                     "CPU-side only: RAM, SSD, Wi-Fi/Bluetooth, and any discrete GPU aren't " +
@@ -2019,7 +2296,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     Text("Status: ${commandStatus ?: if (sending) "SENDING" else "WAITING"}")
                     if (commandStatus == "FAILED" && errorCode != null) {
                         Text("Error: $errorCode", color = MaterialTheme.colorScheme.error)
-                        DownloadProtocol.describeError(errorCode)?.let {
+                        (PingProtocol.describeError(errorCode) ?: DownloadProtocol.describeError(errorCode))?.let {
                             Text(it, color = MaterialTheme.colorScheme.error)
                         }
                     }
@@ -2038,6 +2315,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                                 PingProtocol.SHUTDOWN_ACTION -> "The laptop is powering off now."
                                 PingProtocol.POWER_MODE_ACTION -> "Power mode updated."
                                 PingProtocol.SYSTEM_INFO_ACTION -> "System info refreshed."
+                                PingProtocol.TAILSCALE_ACTION -> "Tailscale switched."
+                                PingProtocol.SYSTEM_UPDATE_ACTION -> "Update started - follow it on the Update server system card."
                                 DownloadProtocol.ACTION -> "Download started on the server computer - follow it under Downloads."
                                 else -> "PONG received from the agent."
                             },
