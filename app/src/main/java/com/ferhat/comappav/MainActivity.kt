@@ -1,10 +1,13 @@
 package com.ferhat.comappav
 
+import android.content.Intent
 import android.content.res.Configuration
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContent
@@ -104,6 +107,7 @@ import com.ferhat.comappav.ui.glass.GlassFolderRow
 import com.ferhat.comappav.ui.glass.GlassIconButton
 import com.ferhat.comappav.ui.glass.GlassFieldShape
 import com.ferhat.comappav.ui.glass.GlassNavSurface
+import com.ferhat.comappav.ui.glass.GlassProgressBar
 import com.ferhat.comappav.ui.glass.GlassScreen
 import com.ferhat.comappav.ui.glass.LocalGlassPalette
 import com.ferhat.comappav.ui.glass.ReorderableColumn
@@ -120,7 +124,9 @@ private data class SleepRequest(val minutes: Int?)
 private data class NetworkDevice(val mac: String, val ip: String, val name: String)
 
 /** Every card that can be moved around in reorder mode; the names are what gets saved. */
-private enum class CardId { PING, SPEAK, SLEEP, SHUTDOWN, POWER_MODE, SCAN, DEVICES, CONSOLE }
+private enum class CardId {
+    PING, SPEAK, SLEEP, SHUTDOWN, POWER_MODE, SCAN, DEVICES, DOWNLOAD_ADD, DOWNLOAD_LIST, DOWNLOAD_LIMIT, CONSOLE,
+}
 
 /**
  * Card groups, in their default order. The user can reorder both the categories and the cards
@@ -140,6 +146,12 @@ private enum class Category(
         listOf(CardId.SLEEP, CardId.SHUTDOWN, CardId.POWER_MODE),
     ),
     NETWORK("Network", "Scan · Devices on the network", GlassColors.Neutral, listOf(CardId.SCAN, CardId.DEVICES)),
+    DOWNLOADS(
+        "Downloads",
+        "Torrents · links · speed limit",
+        GlassColors.Indigo,
+        listOf(CardId.DOWNLOAD_ADD, CardId.DOWNLOAD_LIST, CardId.DOWNLOAD_LIMIT),
+    ),
     CONSOLE("Console", "App log · errors · crashes", GlassColors.Green, listOf(CardId.CONSOLE)),
 }
 
@@ -154,6 +166,20 @@ private enum class ConsoleTool(val label: String, val description: String) {
 
 /** Key of the category order in [CardOrderStore]; each category's cards are saved under its name. */
 private const val CATEGORY_ORDER_KEY = "categories"
+
+/** One entry of /downloads/latest (see the agent's downloads.py). */
+private data class DownloadItem(
+    val id: String,
+    val name: String,
+    val kind: String,
+    val state: String,
+    val totalBytes: Long,
+    val doneBytes: Long,
+    val downBps: Long,
+    val upBps: Long,
+    val etaSec: Long?,
+    val error: String?,
+)
 
 private data class PowerSnapshot(
     val reportedAt: Long?,
@@ -189,6 +215,16 @@ private const val TAB_SWIPE_FOLLOW_AT_EDGE = 0.12f
 /** How many log lines the Console draws; "Copy all" always includes every saved entry. */
 private const val CONSOLE_VISIBLE_ENTRIES = 150
 
+/** Running downloads first, finished ones last. */
+private fun downloadStateOrder(state: String): Int = when (state) {
+    "DOWNLOADING" -> 0
+    "SEEDING" -> 1
+    "QUEUED" -> 2
+    "PAUSED" -> 3
+    "FAILED" -> 4
+    else -> 5
+}
+
 /** The last characters of a Firebase push ID - enough to tell commands apart in the log. */
 private fun shortId(id: String): String = id.takeLast(6)
 
@@ -199,6 +235,8 @@ class MainActivity : ComponentActivity() {
             AppLog.info("App", "Started v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
         }
         enableEdgeToEdge()
+        // A rotation recreates the activity with the same intent - it was already handled.
+        if (savedInstanceState == null) IncomingDownloads.accept(this, intent)
         val auth = FirebaseAuth.getInstance()
         val database = FirebaseDatabase.getInstance(DATABASE_URL)
         setContent {
@@ -208,6 +246,13 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    // singleTask: a link shared while the app is already open arrives here.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        IncomingDownloads.accept(this, intent)
     }
 }
 
@@ -368,6 +413,15 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var networkDevices by remember { mutableStateOf<List<NetworkDevice>>(emptyList()) }
     var networkScannedAt by remember { mutableStateOf<Long?>(null) }
     var powerSnapshot by remember { mutableStateOf<PowerSnapshot?>(null) }
+    // Downloads: Fedora's report, the saved speed limit, and the limit picked but not applied yet.
+    var downloadItems by remember { mutableStateOf<List<DownloadItem>>(emptyList()) }
+    var downloadsReportedAt by remember { mutableStateOf<Long?>(null) }
+    var appliedLimitMbps by remember { mutableStateOf<Int?>(null) }
+    var savedLimitMbps by remember { mutableStateOf<Int?>(null) }
+    var chosenLimitMbps by rememberSaveable { mutableStateOf<Int?>(null) }
+    var applyingLimit by remember { mutableStateOf(false) }
+    var downloadLink by rememberSaveable { mutableStateOf("") }
+    val incomingDownload by IncomingDownloads.pending
     val sleepTotal = (sleepHours.toIntOrNull() ?: 0) * 60 + (sleepMinutes.toIntOrNull() ?: 0)
     val sleepTotalValid = sleepTotal in 1..PingProtocol.MAX_SLEEP_MINUTES
     var refreshing by remember { mutableStateOf(false) }
@@ -437,7 +491,9 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
     }
 
-    fun sendCommand(action: String, payload: Map<String, Any>) {
+    // [upload], if given, is written to uploads/<commandId> first; the Rules only accept a
+    // torrent-file command once its upload is there.
+    fun sendCommand(action: String, payload: Map<String, Any>, upload: Map<String, Any>? = null) {
         val newCommand = database.getReference("commands").push()
         val id = newCommand.key
         if (id == null) {
@@ -448,21 +504,54 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
             errorCode = null
             error = null
             sending = true
-            newCommand.setValue(payload)
-                .addOnSuccessListener {
-                    sending = false
-                    commandAction = action
-                    commandId = id
-                    commandStatus = "PENDING"
-                    AppLog.info("Command", "$action sent (${shortId(id)}), waiting for the agent")
-                }
-                .addOnFailureListener { exception ->
-                    sending = false
-                    error = exception.localizedMessage
-                        ?: "Could not send $action. Check the connection and Rules."
-                    AppLog.error("Command", "$action could not be sent: $error")
-                }
+            val onFailure = { exception: Exception ->
+                sending = false
+                error = exception.localizedMessage
+                    ?: "Could not send $action. Check the connection and Rules."
+                AppLog.error("Command", "$action could not be sent: $error")
+            }
+            val writeCommand = {
+                newCommand.setValue(payload)
+                    .addOnSuccessListener {
+                        sending = false
+                        commandAction = action
+                        commandId = id
+                        commandStatus = "PENDING"
+                        AppLog.info("Command", "$action sent (${shortId(id)}), waiting for the agent")
+                    }
+                    .addOnFailureListener { exception -> onFailure(exception) }
+            }
+            if (upload == null) {
+                writeCommand()
+            } else {
+                database.getReference("uploads").child(id).setValue(upload)
+                    .addOnSuccessListener { writeCommand() }
+                    .addOnFailureListener { exception -> onFailure(exception) }
+            }
         }
+    }
+
+    fun sendDownload(request: DownloadRequest) {
+        AppLog.info("Downloads", "Asking Fedora to download \"${request.displayName}\" (${request.source})")
+        sendCommand(
+            DownloadProtocol.ACTION,
+            DownloadProtocol.command(user.uid, request),
+            DownloadProtocol.upload(request),
+        )
+    }
+
+    fun applyDownloadLimit(mbps: Int) {
+        applyingLimit = true
+        database.getReference("settings/downloadLimitMbps").setValue(mbps)
+            .addOnSuccessListener {
+                applyingLimit = false
+                AppLog.info("Downloads", "Speed limit set to ${DownloadProtocol.limitLabel(mbps)}")
+            }
+            .addOnFailureListener { exception ->
+                applyingLimit = false
+                error = exception.localizedMessage ?: "Could not save the speed limit."
+                AppLog.error("Downloads", "Could not save the speed limit: $error")
+            }
     }
 
     DisposableEffect(database) {
@@ -583,6 +672,53 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         onDispose { powerRef.removeEventListener(listener) }
     }
 
+    DisposableEffect(database) {
+        val downloadsRef = database.getReference("downloads/latest")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                downloadsReportedAt = snapshot.child("reportedAt").getValue(Long::class.java)
+                appliedLimitMbps = snapshot.child("appliedLimitMbps").getValue(Long::class.java)?.toInt()
+                downloadItems = snapshot.child("items").children.mapNotNull { item ->
+                    val id = item.key ?: return@mapNotNull null
+                    DownloadItem(
+                        id = id,
+                        name = item.child("name").getValue(String::class.java) ?: return@mapNotNull null,
+                        kind = item.child("kind").getValue(String::class.java) ?: "URL",
+                        state = item.child("state").getValue(String::class.java) ?: return@mapNotNull null,
+                        totalBytes = item.child("totalBytes").getValue(Long::class.java) ?: 0L,
+                        doneBytes = item.child("doneBytes").getValue(Long::class.java) ?: 0L,
+                        downBps = item.child("downBps").getValue(Long::class.java) ?: 0L,
+                        upBps = item.child("upBps").getValue(Long::class.java) ?: 0L,
+                        etaSec = item.child("etaSec").getValue(Long::class.java),
+                        error = item.child("error").getValue(String::class.java),
+                    )
+                }.sortedWith(compareBy({ downloadStateOrder(it.state) }, { it.name.lowercase() }))
+            }
+
+            override fun onCancelled(databaseError: DatabaseError) {
+                AppLog.warn("Downloads", "Could not read the download list: ${databaseError.message}")
+            }
+        }
+        downloadsRef.addValueEventListener(listener)
+        onDispose { downloadsRef.removeEventListener(listener) }
+    }
+
+    DisposableEffect(database) {
+        val limitRef = database.getReference("settings/downloadLimitMbps")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                // Nothing saved yet means the agent's default - the same one.
+                savedLimitMbps = DownloadProtocol.parseLimit(snapshot.value)
+            }
+
+            override fun onCancelled(databaseError: DatabaseError) {
+                AppLog.warn("Downloads", "Could not read the speed limit: ${databaseError.message}")
+            }
+        }
+        limitRef.addValueEventListener(listener)
+        onDispose { limitRef.removeEventListener(listener) }
+    }
+
     // A command that nobody picks up is the classic "agent not running / outdated" symptom -
     // say so instead of leaving only "Waiting for the agent" on screen.
     LaunchedEffect(commandId, commandStatus) {
@@ -620,6 +756,53 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
             },
             dismissButton = {
                 TextButton(onClick = { sleepRequest = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    // Picking a .torrent inside the app is already an explicit choice, so it's sent right away.
+    val torrentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val request = IncomingDownloads.readTorrent(context, uri)
+            if (request != null) sendDownload(request) else error = "That file isn't a torrent (or is over 2 MB)."
+        }
+    }
+
+    // Anything arriving from another app waits for an explicit "Download".
+    incomingDownload?.let { incoming ->
+        val what = when (incoming.source) {
+            DownloadProtocol.SOURCE_MAGNET -> "Magnet link"
+            DownloadProtocol.SOURCE_TORRENT_FILE -> "Torrent file"
+            else -> "Link: " + (incoming.url ?: "").take(160)
+        }
+        AlertDialog(
+            onDismissRequest = {
+                IncomingDownloads.pending.value = null
+                AppLog.info("Downloads", "Cancelled \"${incoming.displayName}\"")
+            },
+            title = { Text("Download on Fedora?") },
+            text = {
+                Text(
+                    "\"${incoming.displayName}\"\n$what" +
+                        if (canSend) "" else "\n\nNot ready yet - Fedora is busy or not connected. Try again in a moment.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = canSend,
+                    onClick = {
+                        IncomingDownloads.pending.value = null
+                        sendDownload(incoming)
+                        selectedCategory = Category.DOWNLOADS
+                        if (openCategory != null) openCategoryFolder(Category.DOWNLOADS)
+                    },
+                ) { Text("Download") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    IncomingDownloads.pending.value = null
+                    AppLog.info("Downloads", "Cancelled \"${incoming.displayName}\"")
+                }) { Text("Cancel") }
             },
         )
     }
@@ -1126,6 +1309,175 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
 
     // The cards inside one category - shared by portrait's bottom-nav tabs and landscape's
     // open folder, so both show exactly the same cards.
+    val downloadAddCard: @Composable () -> Unit = {
+        val linkRequest = DownloadProtocol.findLink(downloadLink.trim())
+        GlassCommandCard(
+            title = "Add download",
+            tag = DownloadProtocol.ACTION,
+            description = "A .torrent file, a magnet link or a direct file link - Fedora downloads it to " +
+                "~/Downloads/ComApp. From any app you can also share a link with \"Download on Fedora\".",
+            accent = GlassColors.Indigo,
+        ) {
+            GlassButton(
+                text = "Choose a .torrent file",
+                accent = GlassColors.Indigo,
+                enabled = canSend,
+                loading = sending && commandAction == DownloadProtocol.ACTION,
+                onClick = { torrentPicker.launch(arrayOf("application/x-bittorrent", "application/octet-stream")) },
+            )
+            OutlinedTextField(
+                value = downloadLink,
+                onValueChange = { if (it.length <= DownloadProtocol.MAX_URL_LENGTH) downloadLink = it },
+                label = { Text("Magnet or file link") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                shape = GlassFieldShape,
+                colors = glassTextFieldColors(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (downloadLink.isNotBlank() && linkRequest == null) {
+                Text(
+                    "That isn't a magnet or http(s) link.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GlassColors.Red,
+                )
+            }
+            GlassButton(
+                text = "Download on Fedora",
+                accent = GlassColors.Indigo,
+                prominent = false,
+                enabled = canSend && linkRequest != null,
+                onClick = {
+                    linkRequest?.let {
+                        sendDownload(it)
+                        downloadLink = ""
+                    }
+                },
+            )
+        }
+    }
+
+    val downloadListCard: @Composable () -> Unit = {
+        val palette = LocalGlassPalette.current
+        GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Indigo, cornerRadius = 22.dp) {
+            Text(
+                "On Fedora",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                downloadsReportedAt?.let { "Updated ${formatRelativeTime(it)}" } ?: "Waiting for Fedora's first report…",
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.inkMuted,
+            )
+            if (downloadItems.isEmpty()) {
+                Text("No downloads yet.", style = MaterialTheme.typography.bodySmall, color = palette.inkFaint)
+            }
+            downloadItems.forEach { item ->
+                val stateColor = when (item.state) {
+                    "DOWNLOADING" -> GlassColors.Indigo
+                    "SEEDING", "COMPLETE" -> GlassColors.Green
+                    "FAILED" -> GlassColors.Red
+                    else -> palette.inkMuted
+                }
+                val detail = when (item.state) {
+                    "DOWNLOADING" -> buildString {
+                        append(DownloadProtocol.formatBytes(item.doneBytes))
+                        if (item.totalBytes > 0) append(" of ").append(DownloadProtocol.formatBytes(item.totalBytes))
+                        append(" · ").append(DownloadProtocol.formatSpeed(item.downBps))
+                        item.etaSec?.let { append(" · ").append(DownloadProtocol.formatEta(it)).append(" left") }
+                    }
+                    "SEEDING" -> "${DownloadProtocol.formatBytes(item.totalBytes)} · sharing " +
+                        "${DownloadProtocol.formatSpeed(item.upBps)} for a few minutes, then done"
+                    "COMPLETE" -> "${DownloadProtocol.formatBytes(item.totalBytes)} · in ~/Downloads/ComApp"
+                    "FAILED" -> DownloadProtocol.describeItemError(item.error)
+                    "QUEUED" -> "Waiting for a free slot"
+                    else -> DownloadProtocol.stateLabel(item.state)
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            item.name,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            DownloadProtocol.stateLabel(item.state),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = stateColor,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    if (item.totalBytes > 0 && item.state != "FAILED") {
+                        GlassProgressBar(
+                            fraction = item.doneBytes.toFloat() / item.totalBytes.toFloat(),
+                            accent = stateColor,
+                        )
+                    }
+                    Text(
+                        (if (item.kind == "TORRENT") "Torrent · " else "Link · ") + detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.inkMuted,
+                    )
+                }
+            }
+        }
+    }
+
+    val downloadLimitCard: @Composable () -> Unit = {
+        val saved = savedLimitMbps
+        val chosen = chosenLimitMbps ?: saved ?: DownloadProtocol.DEFAULT_LIMIT_MBPS
+        val applied = appliedLimitMbps
+        GlassCommandCard(
+            title = "Speed limit",
+            tag = "SETTING",
+            description = "One limit shared by every download on Fedora, torrents and links together.",
+            accent = GlassColors.Indigo,
+        ) {
+            val limitScroll = rememberScrollState()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalEdgeFade(limitScroll)
+                    .horizontalScroll(limitScroll),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                DownloadProtocol.LIMIT_PRESETS_MBPS.forEach { mbps ->
+                    GlassChip(
+                        text = DownloadProtocol.limitLabel(mbps),
+                        selected = chosen == mbps,
+                        accent = GlassColors.Indigo,
+                        onClick = { chosenLimitMbps = mbps },
+                    )
+                }
+            }
+            GlassButton(
+                text = if (chosen == saved) "Applied" else "Apply ${DownloadProtocol.limitLabel(chosen)}",
+                accent = GlassColors.Indigo,
+                enabled = authorized && connected == true && chosen != saved && !applyingLimit,
+                loading = applyingLimit,
+                onClick = { applyDownloadLimit(chosen) },
+            )
+            Text(
+                if (applied == null) {
+                    "Fedora hasn't reported its limit yet."
+                } else if (applied == saved) {
+                    "Fedora is using ${DownloadProtocol.limitLabel(applied)}."
+                } else {
+                    "Fedora is still on ${DownloadProtocol.limitLabel(applied)} - it picks up the new one within ~15 s."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = LocalGlassPalette.current.inkMuted,
+            )
+        }
+    }
+
     val cardContent: @Composable (CardId) -> Unit = { id ->
         when (id) {
             CardId.PING -> pingCard()
@@ -1135,6 +1487,9 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
             CardId.POWER_MODE -> powerModeCard()
             CardId.SCAN -> scanCard()
             CardId.DEVICES -> networkCard()
+            CardId.DOWNLOAD_ADD -> downloadAddCard()
+            CardId.DOWNLOAD_LIST -> downloadListCard()
+            CardId.DOWNLOAD_LIMIT -> downloadLimitCard()
             CardId.CONSOLE -> consoleCard()
         }
     }
@@ -1411,6 +1766,9 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     Text("Status: ${commandStatus ?: if (sending) "SENDING" else "WAITING"}")
                     if (commandStatus == "FAILED" && errorCode != null) {
                         Text("Error: $errorCode", color = MaterialTheme.colorScheme.error)
+                        DownloadProtocol.describeError(errorCode)?.let {
+                            Text(it, color = MaterialTheme.colorScheme.error)
+                        }
                     }
                     if (commandStatus == "PENDING") {
                         Text("Waiting for the agent.")
@@ -1426,6 +1784,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                                 PingProtocol.SCAN_ACTION -> "Network scan complete."
                                 PingProtocol.SHUTDOWN_ACTION -> "The laptop is powering off now."
                                 PingProtocol.POWER_MODE_ACTION -> "Power mode updated."
+                                DownloadProtocol.ACTION -> "Download started on Fedora - follow it under Downloads."
                                 else -> "PONG received from the agent."
                             },
                         )

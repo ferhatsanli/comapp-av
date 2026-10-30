@@ -364,6 +364,68 @@ try {
     }));
     await assertFails(update(command(piDb, "ping-not-mode-set"), { status: "SUCCESS", result: "MODE_SET", processingAt: null }));
   });
+  await check("DOWNLOAD_ADD: magnet/URL/torrent-file sources, upload first, specific error codes", async () => {
+    const dl = (over) => ({ action: "DOWNLOAD_ADD", senderUid: ANDROID, targetUid: PI, status: "PENDING", ...over });
+    await assertSucceeds(set(command(androidDb, "dl-magnet"), dl({ source: "MAGNET", url: "magnet:?xt=urn:btih:abc&dn=ubuntu" })));
+    await assertSucceeds(set(command(androidDb, "dl-url"), dl({ source: "URL", url: "https://example.com/fedora.iso" })));
+    await assertFails(set(command(androidDb, "dl-file-scheme"), dl({ source: "URL", url: "file:///etc/passwd" })));
+    await assertFails(set(command(androidDb, "dl-magnet-not"), dl({ source: "MAGNET", url: "https://example.com/x" })));
+    await assertFails(set(command(androidDb, "dl-no-source"), dl({ url: "https://example.com/x.iso" })));
+    await assertFails(set(command(androidDb, "ping-with-url"), {
+      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING", source: "URL", url: "https://example.com/x",
+    }));
+
+    // A torrent file is uploaded first; only then may its command exist.
+    await assertFails(set(command(androidDb, "dl-torrent"), dl({ source: "TORRENT_FILE" })));
+    await assertSucceeds(set(ref(androidDb, "uploads/dl-torrent"), { torrent: "ZDg6YW5ub3VuY2U=" }));
+    await assertFails(set(ref(androidDb, "uploads/dl-torrent"), { torrent: "ZQ==" }));
+    await assertFails(get(ref(androidDb, "uploads/dl-torrent")));
+    await assertSucceeds(set(command(androidDb, "dl-torrent"), dl({ source: "TORRENT_FILE" })));
+    const upload = await assertSucceeds(get(ref(piDb, "uploads/dl-torrent")));
+    assert.equal(upload.val().torrent, "ZDg6YW5ub3VuY2U=");
+    await assertSucceeds(set(ref(piDb, "uploads/dl-torrent"), null));
+
+    await assertSucceeds(update(command(piDb, "dl-magnet"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertFails(update(command(piDb, "dl-magnet"), { url: "magnet:?xt=urn:btih:zzz" }));
+    await assertFails(update(command(piDb, "dl-magnet"), { status: "SUCCESS", result: "PONG", processingAt: null }));
+    await assertSucceeds(update(command(piDb, "dl-magnet"), { status: "SUCCESS", result: "DOWNLOAD_STARTED", processingAt: null }));
+
+    await assertSucceeds(update(command(piDb, "dl-url"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertFails(update(command(piDb, "dl-url"), { status: "FAILED", errorCode: "WHATEVER", processingAt: null }));
+    await assertSucceeds(update(command(piDb, "dl-url"), { status: "FAILED", errorCode: "NOT_A_FILE", processingAt: null }));
+
+    // The download-only codes are not available to other actions.
+    await assertSucceeds(set(command(androidDb, "ping-no-download-codes"), {
+      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+    }));
+    await assertSucceeds(update(command(piDb, "ping-no-download-codes"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertFails(update(command(piDb, "ping-no-download-codes"), { status: "FAILED", errorCode: "NO_SPACE", processingAt: null }));
+  });
+
+  await check("Only the Pi writes /downloads/latest, Android reads it; only Android sets the speed limit", async () => {
+    const report = {
+      reportedAt: serverTimestamp(), appliedLimitMbps: 20,
+      items: {
+        "2089b05ecca3d829": {
+          name: "ubuntu.iso", kind: "TORRENT", state: "DOWNLOADING",
+          totalBytes: 6000, doneBytes: 1200, downBps: 2400, upBps: 10, etaSec: 2,
+        },
+      },
+    };
+    await assertFails(set(ref(androidDb, "downloads/latest"), report));
+    await assertSucceeds(set(ref(piDb, "downloads/latest"), report));
+    await assertFails(set(ref(piDb, "downloads/latest/items/2089b05ecca3d829/path"), "/home"));
+    await assertSucceeds(get(ref(androidDb, "downloads/latest")));
+    await assertFails(get(ref(piDb, "downloads/latest")));
+
+    await assertSucceeds(set(ref(androidDb, "settings/downloadLimitMbps"), 20));
+    await assertSucceeds(set(ref(androidDb, "settings/downloadLimitMbps"), 0));
+    await assertFails(set(ref(androidDb, "settings/downloadLimitMbps"), -1));
+    await assertFails(set(ref(androidDb, "settings/downloadLimitMbps"), 2.5));
+    await assertFails(set(ref(piDb, "settings/downloadLimitMbps"), 50));
+    await assertSucceeds(get(ref(piDb, "settings/downloadLimitMbps")));
+  });
+
   await check("Only the Pi writes /network/latest, and only Android reads it, with required shape", async () => {
     await assertFails(get(ref(anonymousDb, "network/latest")));
     await assertFails(set(ref(piDb, "network/latest"), {

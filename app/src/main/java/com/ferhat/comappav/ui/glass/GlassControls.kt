@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -129,19 +130,34 @@ fun GlassButton(
     }
 }
 
-/** Small frosted chip, for quick presets and secondary actions. */
+/**
+ * Small frosted chip, for quick presets and secondary actions. A [selected] chip (one choice of
+ * several) is filled with [accent], like a prominent button.
+ */
 @Composable
 fun GlassChip(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    accent: Color = GlassColors.Blue,
 ) {
     val palette = LocalGlassPalette.current
     Box(
         modifier
             .height(32.dp)
             .clip(ChipShape)
-            .background(palette.chipFill)
+            .drawBehind {
+                if (selected) {
+                    drawRect(
+                        Brush.verticalGradient(
+                            listOf(accent.copy(alpha = palette.buttonTop), accent.copy(alpha = palette.buttonBottom)),
+                        ),
+                    )
+                } else {
+                    drawRect(palette.chipFill)
+                }
+            }
             .border(
                 1.dp,
                 Brush.linearGradient(
@@ -153,7 +169,42 @@ fun GlassChip(
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text = text, color = palette.ink, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Text(
+            text = text,
+            color = if (selected) Color.White else palette.ink,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+        )
+    }
+}
+
+/** Thin glass progress bar; [fraction] runs 0..1. */
+@Composable
+fun GlassProgressBar(
+    fraction: Float,
+    modifier: Modifier = Modifier,
+    accent: Color = GlassColors.Blue,
+) {
+    val palette = LocalGlassPalette.current
+    val shape = RoundedCornerShape(3.dp)
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(6.dp)
+            .clip(shape)
+            .background(palette.chipFill, shape),
+    ) {
+        Box(
+            Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(fraction.coerceIn(0f, 1f))
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(accent.copy(alpha = palette.buttonBottom), accent.copy(alpha = palette.buttonTop)),
+                    ),
+                    shape,
+                ),
+        )
     }
 }
 
