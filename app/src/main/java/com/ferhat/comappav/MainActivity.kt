@@ -1940,16 +1940,21 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalArrangement = Arrangement.spacedBy(14.dp),
                             ) {
+                                val infoCards: @Composable () -> Unit = {
+                                    connectionCard()
+                                    systemInfoCard()
+                                    authorizedWarning()
+                                    latestCommandCard()
+                                    errorText()
+                                }
                                 when (tool) {
                                     RightPaneView.LOGS -> consoleCard()
-                                    RightPaneView.NETWORK_DEVICES -> networkCard()
-                                    null -> {
-                                        connectionCard()
-                                        systemInfoCard()
-                                        authorizedWarning()
-                                        latestCommandCard()
-                                        errorText()
+                                    // The device list goes on top; the info cards stay below it.
+                                    RightPaneView.NETWORK_DEVICES -> {
+                                        networkCard()
+                                        infoCards()
                                     }
+                                    null -> infoCards()
                                 }
                             }
                         }
