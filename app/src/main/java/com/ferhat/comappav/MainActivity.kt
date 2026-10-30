@@ -44,6 +44,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.Canvas
 import com.ferhat.comappav.ui.glass.GlassContentButton
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.platform.LocalDensity
@@ -422,6 +428,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var speakText by rememberSaveable { mutableStateOf("") }
     var sleepRequest by remember { mutableStateOf<SleepRequest?>(null) }
     var shutdownRequested by remember { mutableStateOf(false) }
+    var signOutRequested by remember { mutableStateOf(false) }
     var requestedPowerMode by remember { mutableStateOf<String?>(null) }
     // Portrait: which bottom-nav tab is active.
     var selectedCategory by rememberSaveable { mutableStateOf(Category.COMMANDS) }
@@ -797,6 +804,24 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
     }
 
+    if (signOutRequested) {
+        AlertDialog(
+            onDismissRequest = { signOutRequested = false },
+            title = { Text("Sign out?") },
+            text = { Text("You'll need to sign in again to send commands.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    signOutRequested = false
+                    AppLog.info("Auth", "Signed out")
+                    auth.signOut()
+                }) { Text("Sign out") }
+            },
+            dismissButton = {
+                TextButton(onClick = { signOutRequested = false }) { Text("Cancel") }
+            },
+        )
+    }
+
     val request = sleepRequest
     if (request != null) {
         AlertDialog(
@@ -946,10 +971,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 reorderButton()
-                GlassChip("Sign out", onClick = {
-                    AppLog.info("Auth", "Signed out")
-                    auth.signOut()
-                })
+                GlassChip("Sign out", onClick = { signOutRequested = true })
             }
         }
     }
@@ -1045,6 +1067,32 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     if (line.length <= PingProtocol.MAX_SPEAK_LENGTH) speakText = line
                 },
                 label = { Text(if (english) "Text to speak (English)" else "Text to speak (Türkçe)") },
+                // A bare "x" at the end of the field clears it - no background, no ring.
+                trailingIcon = if (speakText.isEmpty()) {
+                    null
+                } else {
+                    {
+                        val tint = LocalGlassPalette.current.inkMuted
+                        Box(
+                            Modifier
+                                .size(40.dp)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    role = Role.Button,
+                                    onClickLabel = "Clear the text",
+                                ) { speakText = "" }
+                                .semantics { contentDescription = "Clear the text" },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Canvas(Modifier.size(12.dp)) {
+                                val stroke = 1.8.dp.toPx()
+                                drawLine(tint, Offset.Zero, Offset(size.width, size.height), stroke, StrokeCap.Round)
+                                drawLine(tint, Offset(size.width, 0f), Offset(0f, size.height), stroke, StrokeCap.Round)
+                            }
+                        }
+                    }
+                },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { sendSpeak() }),

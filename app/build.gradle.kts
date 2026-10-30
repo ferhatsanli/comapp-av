@@ -14,8 +14,8 @@ android {
         applicationId = "com.ferhat.comappav"
         minSdk = 33
         targetSdk = 36
-        versionCode = 19
-        versionName = "1.15.1"
+        versionCode = 20
+        versionName = "1.16"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
