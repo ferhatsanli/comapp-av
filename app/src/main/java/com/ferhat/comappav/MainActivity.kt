@@ -152,10 +152,33 @@ private data class SleepRequest(val minutes: Int?)
 
 private data class NetworkDevice(val mac: String, val ip: String, val name: String)
 
+/**
+ * What a card is for, which decides where it goes in landscape:
+ * - [INTERACTIVE]: something to tap, type into or switch (a command, a setting). Shown in the
+ *   left pane, in the open category.
+ * - [INFO]: only shows information. Never in the left pane: the category lists a button for
+ *   it there, and the card itself opens in the right pane, under the connection card.
+ *
+ * Every new card gets one of these - decide it when the card is made.
+ */
+private enum class CardKind { INTERACTIVE, INFO }
+
 /** Every card that can be moved around in reorder mode; the names are what gets saved. */
-private enum class CardId {
-    PING, SPEAK, SLEEP, SHUTDOWN, POWER_MODE, SCAN, DEVICES, DOWNLOAD_ADD, DOWNLOAD_LIST, DOWNLOAD_LIMIT, CONSOLE,
-    TAILSCALE, SYSTEM_UPDATE, POWER_HISTORY,
+private enum class CardId(val kind: CardKind) {
+    PING(CardKind.INTERACTIVE),
+    SPEAK(CardKind.INTERACTIVE),
+    SLEEP(CardKind.INTERACTIVE),
+    SHUTDOWN(CardKind.INTERACTIVE),
+    POWER_MODE(CardKind.INTERACTIVE),
+    SCAN(CardKind.INTERACTIVE),
+    DEVICES(CardKind.INFO),
+    DOWNLOAD_ADD(CardKind.INTERACTIVE),
+    DOWNLOAD_LIST(CardKind.INFO),
+    DOWNLOAD_LIMIT(CardKind.INTERACTIVE),
+    CONSOLE(CardKind.INTERACTIVE), // the Console category has its own tool list in landscape
+    TAILSCALE(CardKind.INTERACTIVE),
+    SYSTEM_UPDATE(CardKind.INTERACTIVE),
+    POWER_HISTORY(CardKind.INFO),
 }
 
 /**
@@ -210,10 +233,14 @@ private enum class ConsoleTool(val label: String, val description: String) {
 }
 
 /**
- * What's open as a window in the landscape right pane, instead of the usual info cards: a
- * Console tool, the "On the network" device list, or the "On the server computer" download list.
+ * What's open in the landscape right pane besides the usual info cards: a Console tool (which
+ * takes the place of the info cards), or one info card of the open category (on top of them).
+ * The connection card stays above all of it.
  */
-private enum class RightPaneView { LOGS, NETWORK_DEVICES, DOWNLOADS }
+private sealed interface RightPaneView {
+    data object Logs : RightPaneView
+    data class Info(val card: CardId) : RightPaneView
+}
 
 /** Where the Speak language choice is kept on the phone. */
 private const val SPEECH_PREFS = "speech"
@@ -463,10 +490,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var consoleErrorsOnly by rememberSaveable { mutableStateOf(false) }
     // Landscape Console folder: the tool whose window is shown in the right pane, if any.
     var consoleTool by rememberSaveable { mutableStateOf<ConsoleTool?>(null) }
-    // Landscape Network folder: whether "On the network" is open as a window in the right pane.
-    var networkDevicesOpen by rememberSaveable { mutableStateOf(false) }
-    // Landscape Downloads folder: whether "On the server computer" is open as a window in the right pane.
-    var downloadsOpen by rememberSaveable { mutableStateOf(false) }
+    // Landscape: the open category's info card shown in the right pane, if any.
+    var openInfoCard by rememberSaveable { mutableStateOf<CardId?>(null) }
 
     // Reorder mode, and the user's saved order of categories and of the cards in each one.
     val context = LocalContext.current
@@ -551,8 +576,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     // back slides them out to the right again and the category list returns from the left.
     fun openCategoryFolder(category: Category) {
         consoleTool = null
-        networkDevicesOpen = false
-        downloadsOpen = false
+        openInfoCard = null
         openCategory = category
         selectedCategory = category // keep portrait's tab in sync if the phone is rotated
         scope.launch { openProgress.animateTo(1f, tween(durationMillis = 300)) }
@@ -586,8 +610,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
 
     fun closeCategoryFolder() {
         consoleTool = null // the right pane goes back to the info cards right away
-        networkDevicesOpen = false
-        downloadsOpen = false
+        openInfoCard = null
         scope.launch {
             openProgress.animateTo(0f, tween(durationMillis = 250))
             openCategory = null
@@ -1994,44 +2017,65 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
     }
 
-    // Landscape Network folder: Ping, Scan and the Tailscale switch stay as they are; "On the network" opens the
-    // device list as a window in the right pane instead, the same way a Console tool does.
-    val networkTools: @Composable () -> Unit = {
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            pingCard()
-            scanCard()
-            tailscaleRow()
-            if (networkDevices.isNotEmpty()) {
-                GlassFolderRow(
-                    title = "On the network",
-                    subtitle = "${networkDevices.size} device${if (networkDevices.size == 1) "" else "s"} found",
-                    accent = Category.NETWORK.accent,
-                    selected = networkDevicesOpen,
-                    onClick = { networkDevicesOpen = !networkDevicesOpen },
-                )
+    // Landscape: the button in a category's left pane that opens one of its info cards on the
+    // right - its title and a short line about what's in it; null hides the button.
+    fun infoButton(id: CardId): Pair<String, String>? = when (id) {
+        CardId.DEVICES -> if (networkDevices.isEmpty()) {
+            null
+        } else {
+            "On the network" to "${networkDevices.size} device${if (networkDevices.size == 1) "" else "s"} found"
+        }
+        CardId.DOWNLOAD_LIST -> {
+            val active = downloadItems.count { it.state == "DOWNLOADING" || it.state == "QUEUED" }
+            "On the server computer" to when {
+                downloadItems.isEmpty() -> "No downloads yet"
+                active > 0 -> "$active active · ${downloadItems.size} in the list"
+                else -> "${downloadItems.size} in the list"
             }
         }
+        CardId.POWER_HISTORY -> "History" to "CPU usage and power draw"
+        else -> null
     }
 
-    // Landscape Downloads folder: adding a download and the speed limit stay as cards (in the
-    // user's order); "On the server computer" opens the download list in the right pane, like Network's list.
-    val downloadTools: @Composable () -> Unit = {
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            (cardOrders[Category.DOWNLOADS] ?: Category.DOWNLOADS.cards)
-                .filter { it != CardId.DOWNLOAD_LIST }
-                .forEach { id -> cardContent(id) }
-            val active = downloadItems.count { it.state == "DOWNLOADING" || it.state == "QUEUED" }
-            GlassFolderRow(
-                title = "On the server computer",
-                subtitle = when {
-                    downloadItems.isEmpty() -> "No downloads yet"
-                    active > 0 -> "$active active · ${downloadItems.size} in the list"
-                    else -> "${downloadItems.size} in the list"
+    // Landscape folder of a category: its interactive cards (in the user's order, reorderable),
+    // then a button for each info card, which opens that card in the right pane.
+    val landscapeFolder: @Composable (Category) -> Unit = { category ->
+        val cards = cardOrders[category] ?: category.cards
+        val interactive = cards.filter { it.kind == CardKind.INTERACTIVE }
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            reorderHint()
+            ReorderableColumn(
+                items = interactive,
+                itemKey = { it },
+                enabled = reordering,
+                onMove = { from, to ->
+                    // Move within the full order, so the info cards keep their places.
+                    val full = (cardOrders[category] ?: category.cards).toMutableList()
+                    val shown = full.filter { it.kind == CardKind.INTERACTIVE }
+                    val moved = shown[from]
+                    val target = shown[to]
+                    full.remove(moved)
+                    val at = full.indexOf(target)
+                    full.add(if (to > from) at + 1 else at, moved)
+                    cardOrders[category] = full
                 },
-                accent = Category.DOWNLOADS.accent,
-                selected = downloadsOpen,
-                onClick = { downloadsOpen = !downloadsOpen },
-            )
+                modifier = Modifier.fillMaxWidth(),
+                accent = category.accent,
+            ) { id -> cardContent(id) }
+            cards.filter { it.kind == CardKind.INFO }.forEach { id ->
+                infoButton(id)?.let { (title, subtitle) ->
+                    GlassFolderRow(
+                        title = title,
+                        subtitle = subtitle,
+                        accent = category.accent,
+                        selected = openInfoCard == id,
+                        onClick = { openInfoCard = if (openInfoCard == id) null else id },
+                    )
+                }
+            }
         }
     }
 
@@ -2143,19 +2187,13 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                             )
                             Spacer(Modifier.width(8.dp))
                             // The header (and its reorder button) isn't on screen inside a
-                            // folder, so the folder bar carries its own. Console lists tools, and
-                            // Network and Downloads keep their lists in the right pane, so there's
-                            // nothing to reorder in them here.
-                            if (category !in setOf(Category.CONSOLE, Category.NETWORK, Category.DOWNLOADS)) {
-                                reorderButton()
-                            }
+                            // folder, so the folder bar carries its own - when there are at
+                            // least two cards here to reorder. Console lists tools, not cards.
+                            val interactiveCount = (cardOrders[category] ?: category.cards)
+                                .count { it.kind == CardKind.INTERACTIVE }
+                            if (category != Category.CONSOLE && interactiveCount >= 2) reorderButton()
                         }
-                        when (category) {
-                            Category.CONSOLE -> consoleTools()
-                            Category.NETWORK -> networkTools()
-                            Category.DOWNLOADS -> downloadTools()
-                            else -> categoryCards(category)
-                        }
+                        if (category == Category.CONSOLE) consoleTools() else landscapeFolder(category)
                     }
                 }
             }
@@ -2398,12 +2436,11 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     landscapeNavigator()
                     verticalDivider()
                     val infoScroll = rememberScrollState()
-                    // A Console tool, or the Network folder's device list, while one is open;
-                    // otherwise the usual info cards.
-                    val rightPaneTool = when {
-                        openCategory == Category.CONSOLE && consoleTool == ConsoleTool.LOGS -> RightPaneView.LOGS
-                        openCategory == Category.NETWORK && networkDevicesOpen -> RightPaneView.NETWORK_DEVICES
-                        openCategory == Category.DOWNLOADS && downloadsOpen -> RightPaneView.DOWNLOADS
+                    // A Console tool, or an info card of the open category, while one is open.
+                    val openCategoryCards = openCategory?.let { cardOrders[it] ?: it.cards }.orEmpty()
+                    val rightPaneTool: RightPaneView? = when {
+                        openCategory == Category.CONSOLE && consoleTool == ConsoleTool.LOGS -> RightPaneView.Logs
+                        openInfoCard != null && openInfoCard in openCategoryCards -> RightPaneView.Info(openInfoCard!!)
                         else -> null
                     }
                     LaunchedEffect(rightPaneTool) { infoScroll.scrollTo(0) }
@@ -2416,6 +2453,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                             .padding(horizontal = 16.dp, vertical = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
+                        // Always first, whatever opens below it: is the database reachable?
+                        connectionCard()
                         AnimatedContent(
                             targetState = rightPaneTool,
                             transitionSpec = {
@@ -2429,21 +2468,16 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                                 verticalArrangement = Arrangement.spacedBy(14.dp),
                             ) {
                                 val infoCards: @Composable () -> Unit = {
-                                    connectionCard()
                                     systemInfoCard()
                                     authorizedWarning()
                                     latestCommandCard()
                                     errorText()
                                 }
                                 when (tool) {
-                                    RightPaneView.LOGS -> consoleCard()
-                                    // A list window goes on top; the info cards stay below it.
-                                    RightPaneView.NETWORK_DEVICES -> {
-                                        networkCard()
-                                        infoCards()
-                                    }
-                                    RightPaneView.DOWNLOADS -> {
-                                        downloadListCard()
+                                    RightPaneView.Logs -> consoleCard()
+                                    // The opened info card goes first; the usual ones stay below it.
+                                    is RightPaneView.Info -> {
+                                        cardContent(tool.card)
                                         infoCards()
                                     }
                                     null -> infoCards()
