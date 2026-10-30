@@ -184,9 +184,9 @@ private enum class ConsoleTool(val label: String, val description: String) {
 
 /**
  * What's open as a window in the landscape right pane, instead of the usual info cards: a
- * Console tool, or (landscape only) the "On the network" device list.
+ * Console tool, the "On the network" device list, or the "On Fedora" download list.
  */
-private enum class RightPaneView { LOGS, NETWORK_DEVICES }
+private enum class RightPaneView { LOGS, NETWORK_DEVICES, DOWNLOADS }
 
 /** Key of the category order in [CardOrderStore]; each category's cards are saved under its name. */
 private const val CATEGORY_ORDER_KEY = "categories"
@@ -416,6 +416,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var consoleTool by rememberSaveable { mutableStateOf<ConsoleTool?>(null) }
     // Landscape Network folder: whether "On the network" is open as a window in the right pane.
     var networkDevicesOpen by rememberSaveable { mutableStateOf(false) }
+    // Landscape Downloads folder: whether "On Fedora" is open as a window in the right pane.
+    var downloadsOpen by rememberSaveable { mutableStateOf(false) }
 
     // Reorder mode, and the user's saved order of categories and of the cards in each one.
     val context = LocalContext.current
@@ -479,6 +481,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     fun openCategoryFolder(category: Category) {
         consoleTool = null
         networkDevicesOpen = false
+        downloadsOpen = false
         openCategory = category
         selectedCategory = category // keep portrait's tab in sync if the phone is rotated
         scope.launch { openProgress.animateTo(1f, tween(durationMillis = 300)) }
@@ -513,6 +516,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     fun closeCategoryFolder() {
         consoleTool = null // the right pane goes back to the info cards right away
         networkDevicesOpen = false
+        downloadsOpen = false
         scope.launch {
             openProgress.animateTo(0f, tween(durationMillis = 250))
             openCategory = null
@@ -1611,6 +1615,28 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
     }
 
+    // Landscape Downloads folder: adding a download and the speed limit stay as cards (in the
+    // user's order); "On Fedora" opens the download list in the right pane, like Network's list.
+    val downloadTools: @Composable () -> Unit = {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            (cardOrders[Category.DOWNLOADS] ?: Category.DOWNLOADS.cards)
+                .filter { it != CardId.DOWNLOAD_LIST }
+                .forEach { id -> cardContent(id) }
+            val active = downloadItems.count { it.state == "DOWNLOADING" || it.state == "QUEUED" }
+            GlassFolderRow(
+                title = "On Fedora",
+                subtitle = when {
+                    downloadItems.isEmpty() -> "No downloads yet"
+                    active > 0 -> "$active active · ${downloadItems.size} in the list"
+                    else -> "${downloadItems.size} in the list"
+                },
+                accent = Category.DOWNLOADS.accent,
+                selected = downloadsOpen,
+                onClick = { downloadsOpen = !downloadsOpen },
+            )
+        }
+    }
+
     // Landscape: the left pane works like browsing folders. At the root it lists only the
     // categories; opening one slides its cards in from the right over the list. Going back -
     // the "‹ Categories" chip, the system back button, or a left-to-right swipe anywhere on
@@ -1720,13 +1746,16 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                             Spacer(Modifier.width(8.dp))
                             // The header (and its reorder button) isn't on screen inside a
                             // folder, so the folder bar carries its own. Console lists tools, and
-                            // Network is just Scan plus the "On the network" button, so there's
-                            // nothing to reorder in either.
-                            if (category != Category.CONSOLE && category != Category.NETWORK) reorderButton()
+                            // Network and Downloads keep their lists in the right pane, so there's
+                            // nothing to reorder in them here.
+                            if (category !in setOf(Category.CONSOLE, Category.NETWORK, Category.DOWNLOADS)) {
+                                reorderButton()
+                            }
                         }
                         when (category) {
                             Category.CONSOLE -> consoleTools()
                             Category.NETWORK -> networkTools()
+                            Category.DOWNLOADS -> downloadTools()
                             else -> categoryCards(category)
                         }
                     }
@@ -1916,6 +1945,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     val rightPaneTool = when {
                         openCategory == Category.CONSOLE && consoleTool == ConsoleTool.LOGS -> RightPaneView.LOGS
                         openCategory == Category.NETWORK && networkDevicesOpen -> RightPaneView.NETWORK_DEVICES
+                        openCategory == Category.DOWNLOADS && downloadsOpen -> RightPaneView.DOWNLOADS
                         else -> null
                     }
                     LaunchedEffect(rightPaneTool) { infoScroll.scrollTo(0) }
@@ -1949,9 +1979,13 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                                 }
                                 when (tool) {
                                     RightPaneView.LOGS -> consoleCard()
-                                    // The device list goes on top; the info cards stay below it.
+                                    // A list window goes on top; the info cards stay below it.
                                     RightPaneView.NETWORK_DEVICES -> {
                                         networkCard()
+                                        infoCards()
+                                    }
+                                    RightPaneView.DOWNLOADS -> {
+                                        downloadListCard()
                                         infoCards()
                                     }
                                     null -> infoCards()
