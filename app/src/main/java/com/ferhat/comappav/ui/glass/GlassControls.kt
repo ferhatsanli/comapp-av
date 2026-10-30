@@ -5,7 +5,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,6 +23,7 @@ import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -33,6 +33,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlurEffect
@@ -52,12 +53,50 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 // macOS push buttons are rounded rectangles, not pills.
 private val ButtonShape = RoundedCornerShape(10.dp)
 private val ChipShape = RoundedCornerShape(8.dp)
+
+/**
+ * A single line of text that shrinks its own font, step by step, until it fits - so a label in a
+ * tight space loses size before it ever loses its last letters. Used wherever a fixed-width slot
+ * (the bottom nav today) has to hold labels of very different lengths.
+ */
+@Composable
+fun AutoSizeText(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color,
+    maxFontSize: TextUnit,
+    minFontSize: TextUnit = 7.sp,
+    fontWeight: FontWeight? = null,
+    textAlign: TextAlign = TextAlign.Center,
+) {
+    var fontSize by remember(text, maxFontSize) { mutableFloatStateOf(maxFontSize.value) }
+    var settled by remember(text, maxFontSize) { mutableStateOf(false) }
+    Text(
+        text = text,
+        modifier = modifier.drawWithContent { if (settled) drawContent() },
+        color = color,
+        fontSize = fontSize.sp,
+        fontWeight = fontWeight,
+        maxLines = 1,
+        softWrap = false,
+        textAlign = textAlign,
+        onTextLayout = { result ->
+            if (result.didOverflowWidth && fontSize > minFontSize.value) {
+                fontSize = (fontSize - 1f).coerceAtLeast(minFontSize.value)
+            } else {
+                settled = true
+            }
+        },
+    )
+}
 
 /**
  * Glass push button in the macOS style. [prominent] buttons are filled with the accent color, the others are
@@ -354,6 +393,7 @@ fun GlassBottomNavItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     accent: Color = GlassColors.Blue,
+    icon: DrawScope.(tint: Color) -> Unit,
 ) {
     val palette = LocalGlassPalette.current
     val shape = RoundedCornerShape(12.dp)
@@ -361,31 +401,131 @@ fun GlassBottomNavItem(
         targetValue = if (selected) accent.copy(alpha = 0.20f) else Color.Transparent,
         label = "navPill",
     )
-    Row(
+    val tint = if (selected) accent else palette.inkMuted
+    Column(
         modifier
+            .fillMaxWidth()
             .clip(shape)
             .background(pill, shape)
             .clickable(onClick = onClick)
-            .padding(vertical = 12.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(vertical = 8.dp, horizontal = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(
-            Modifier
-                .size(7.dp)
-                .clip(CircleShape)
-                .background(if (selected) accent else palette.inkFaint, CircleShape),
-        )
-        Spacer(Modifier.width(5.dp))
-        Text(
+        Canvas(Modifier.size(20.dp)) { icon(tint) }
+        Spacer(Modifier.height(3.dp))
+        AutoSizeText(
             text = label,
+            modifier = Modifier.fillMaxWidth(),
             color = if (selected) palette.ink else palette.inkMuted,
-            fontSize = 12.sp,
+            maxFontSize = 10.sp,
+            minFontSize = 7.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-            maxLines = 1,
-            softWrap = false,
         )
     }
+}
+
+/** Terminal prompt - ">" and a cursor underscore - for the Commands tab. */
+fun DrawScope.drawCommandsIcon(tint: Color) {
+    val w = size.width
+    val h = size.height
+    val stroke = 1.6.dp.toPx()
+    val chevron = Path().apply {
+        moveTo(w * 0.22f, h * 0.28f)
+        lineTo(w * 0.46f, h * 0.5f)
+        lineTo(w * 0.22f, h * 0.72f)
+    }
+    drawPath(chevron, tint, style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    drawLine(
+        color = tint,
+        start = Offset(w * 0.54f, h * 0.72f),
+        end = Offset(w * 0.80f, h * 0.72f),
+        strokeWidth = stroke,
+        cap = StrokeCap.Round,
+    )
+}
+
+/** Power button symbol - a broken circle with a vertical tick through the gap - for Power. */
+fun DrawScope.drawPowerIcon(tint: Color) {
+    val w = size.width
+    val h = size.height
+    val stroke = 1.6.dp.toPx()
+    val cx = w / 2f
+    val cy = h * 0.58f
+    val r = w * 0.32f
+    drawArc(
+        color = tint,
+        startAngle = -55f,
+        sweepAngle = 290f,
+        useCenter = false,
+        topLeft = Offset(cx - r, cy - r),
+        size = Size(r * 2, r * 2),
+        style = Stroke(width = stroke, cap = StrokeCap.Round),
+    )
+    drawLine(
+        color = tint,
+        start = Offset(cx, h * 0.12f),
+        end = Offset(cx, cy - r * 0.1f),
+        strokeWidth = stroke,
+        cap = StrokeCap.Round,
+    )
+}
+
+/** Three connected nodes - a tiny network graph - for Network. */
+fun DrawScope.drawNetworkIcon(tint: Color) {
+    val w = size.width
+    val h = size.height
+    val stroke = 1.4.dp.toPx()
+    val top = Offset(w * 0.5f, h * 0.16f)
+    val left = Offset(w * 0.20f, h * 0.80f)
+    val right = Offset(w * 0.80f, h * 0.80f)
+    drawLine(tint, top, left, strokeWidth = stroke, cap = StrokeCap.Round)
+    drawLine(tint, top, right, strokeWidth = stroke, cap = StrokeCap.Round)
+    drawLine(tint, left, right, strokeWidth = stroke, cap = StrokeCap.Round)
+    val dotRadius = w * 0.09f
+    for (node in listOf(top, left, right)) {
+        drawCircle(tint, radius = dotRadius, center = node)
+    }
+}
+
+/** A down arrow dropping into a tray - the standard download glyph - for Downloads. */
+fun DrawScope.drawDownloadIcon(tint: Color) {
+    val w = size.width
+    val h = size.height
+    val stroke = 1.6.dp.toPx()
+    val cx = w / 2f
+    drawLine(tint, Offset(cx, h * 0.12f), Offset(cx, h * 0.60f), strokeWidth = stroke, cap = StrokeCap.Round)
+    val arrow = Path().apply {
+        moveTo(w * 0.28f, h * 0.44f)
+        lineTo(cx, h * 0.68f)
+        lineTo(w * 0.72f, h * 0.44f)
+    }
+    drawPath(arrow, tint, style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    drawLine(
+        color = tint,
+        start = Offset(w * 0.18f, h * 0.86f),
+        end = Offset(w * 0.82f, h * 0.86f),
+        strokeWidth = stroke,
+        cap = StrokeCap.Round,
+    )
+}
+
+/** Log lines of different lengths with a trailing cursor dot - for Console. */
+fun DrawScope.drawConsoleIcon(tint: Color) {
+    val w = size.width
+    val h = size.height
+    val stroke = 1.4.dp.toPx()
+    val rows = listOf(0.78f, 0.58f, 0.68f)
+    val ys = listOf(0.26f, 0.5f, 0.74f)
+    rows.forEachIndexed { index, endFraction ->
+        drawLine(
+            color = tint,
+            start = Offset(w * 0.22f, h * ys[index]),
+            end = Offset(w * endFraction, h * ys[index]),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+    }
+    drawCircle(tint, radius = w * 0.05f, center = Offset(w * 0.86f, h * 0.74f))
 }
 
 /**

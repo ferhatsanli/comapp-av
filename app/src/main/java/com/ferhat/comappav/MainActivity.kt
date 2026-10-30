@@ -97,6 +97,7 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import com.ferhat.comappav.ui.glass.GlassBottomNavItem
 import com.ferhat.comappav.ui.glass.GlassButton
 import com.ferhat.comappav.ui.glass.GlassCard
@@ -111,6 +112,11 @@ import com.ferhat.comappav.ui.glass.GlassProgressBar
 import com.ferhat.comappav.ui.glass.GlassScreen
 import com.ferhat.comappav.ui.glass.LocalGlassPalette
 import com.ferhat.comappav.ui.glass.ReorderableColumn
+import com.ferhat.comappav.ui.glass.drawCommandsIcon
+import com.ferhat.comappav.ui.glass.drawConsoleIcon
+import com.ferhat.comappav.ui.glass.drawDownloadIcon
+import com.ferhat.comappav.ui.glass.drawNetworkIcon
+import com.ferhat.comappav.ui.glass.drawPowerIcon
 import com.ferhat.comappav.ui.glass.drawReorderIcon
 import com.ferhat.comappav.ui.glass.glassTextFieldColors
 import com.ferhat.comappav.ui.theme.ComAppAVTheme
@@ -137,22 +143,34 @@ private enum class Category(
     val contents: String,
     val accent: Color,
     val cards: List<CardId>,
+    val icon: DrawScope.(Color) -> Unit,
 ) {
-    COMMANDS("Commands", "Ping · Speak", GlassColors.Blue, listOf(CardId.PING, CardId.SPEAK)),
+    COMMANDS(
+        "Commands", "Ping · Speak", GlassColors.Blue, listOf(CardId.PING, CardId.SPEAK),
+        { tint -> drawCommandsIcon(tint) },
+    ),
     POWER(
         "Power",
         "Sleep · Shutdown · Power mode",
         GlassColors.Amber,
         listOf(CardId.SLEEP, CardId.SHUTDOWN, CardId.POWER_MODE),
+        { tint -> drawPowerIcon(tint) },
     ),
-    NETWORK("Network", "Scan · Devices on the network", GlassColors.Neutral, listOf(CardId.SCAN, CardId.DEVICES)),
+    NETWORK(
+        "Network", "Scan · Devices on the network", GlassColors.Neutral, listOf(CardId.SCAN, CardId.DEVICES),
+        { tint -> drawNetworkIcon(tint) },
+    ),
     DOWNLOADS(
         "Downloads",
         "Torrents · links · speed limit",
         GlassColors.Indigo,
         listOf(CardId.DOWNLOAD_ADD, CardId.DOWNLOAD_LIST, CardId.DOWNLOAD_LIMIT),
+        { tint -> drawDownloadIcon(tint) },
     ),
-    CONSOLE("Console", "App log · errors · crashes", GlassColors.Green, listOf(CardId.CONSOLE)),
+    CONSOLE(
+        "Console", "App log · errors · crashes", GlassColors.Green, listOf(CardId.CONSOLE),
+        { tint -> drawConsoleIcon(tint) },
+    ),
 }
 
 /**
@@ -1187,6 +1205,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                         accent = category.accent,
                         onClick = { selectedCategory = category },
                         modifier = Modifier.weight(1f),
+                        icon = category.icon,
                     )
                 }
             }
