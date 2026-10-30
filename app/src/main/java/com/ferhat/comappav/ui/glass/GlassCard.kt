@@ -207,6 +207,7 @@ fun GlassCommandCard(
     description: String,
     accent: Color,
     modifier: Modifier = Modifier,
+    headerAction: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val palette = LocalGlassPalette.current
@@ -223,6 +224,11 @@ fun GlassCommandCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = palette.inkMuted,
                 )
+            }
+            // An optional small control (a setting for this command) sits just left of the tag.
+            if (headerAction != null) {
+                Spacer(Modifier.width(8.dp))
+                headerAction()
             }
             Spacer(Modifier.width(8.dp))
             GlassTag(tag)

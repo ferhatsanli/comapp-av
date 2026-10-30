@@ -993,8 +993,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
     }
 
-    // Speak: one line of text (Enter sends it), and a flag button that switches the language the
-    // laptop reads it in. While typing, the field is scrolled up above the keyboard.
+    // Speak: one line of text (Enter sends it), and a flag button next to the SPEAK tag that
+    // switches the language the laptop reads it in. While typing, the field is scrolled up above the keyboard.
     val speakCard: @Composable () -> Unit = {
         val english = speakLanguage == PingProtocol.LANGUAGE_EN
         val sendSpeak = {
@@ -1019,31 +1019,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
             tag = PingProtocol.SPEAK_ACTION,
             description = "The laptop reads your text out loud.",
             accent = GlassColors.Indigo,
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .bringIntoViewRequester(speakField),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedTextField(
-                    value = speakText,
-                    onValueChange = { value ->
-                        // One line only: a pasted line break becomes a space.
-                        val line = value.replace('\n', ' ').replace('\r', ' ')
-                        if (line.length <= PingProtocol.MAX_SPEAK_LENGTH) speakText = line
-                    },
-                    label = { Text(if (english) "Text to speak (English)" else "Text to speak (Türkçe)") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                    keyboardActions = KeyboardActions(onSend = { sendSpeak() }),
-                    shape = GlassFieldShape,
-                    colors = glassTextFieldColors(),
-                    modifier = Modifier
-                        .weight(1f)
-                        .onFocusChanged { speakFocused = it.isFocused },
-                )
-                Spacer(Modifier.width(8.dp))
+            headerAction = {
                 GlassContentButton(
                     description = if (english) {
                         "Speech language: English. Tap for Turkish."
@@ -1059,7 +1035,26 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 ) {
                     Text(if (english) "\uD83C\uDDEC\uD83C\uDDE7" else "\uD83C\uDDF9\uD83C\uDDF7", fontSize = 18.sp)
                 }
-            }
+            },
+        ) {
+            OutlinedTextField(
+                value = speakText,
+                onValueChange = { value ->
+                    // One line only: a pasted line break becomes a space.
+                    val line = value.replace('\n', ' ').replace('\r', ' ')
+                    if (line.length <= PingProtocol.MAX_SPEAK_LENGTH) speakText = line
+                },
+                label = { Text(if (english) "Text to speak (English)" else "Text to speak (Türkçe)") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { sendSpeak() }),
+                shape = GlassFieldShape,
+                colors = glassTextFieldColors(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .bringIntoViewRequester(speakField)
+                    .onFocusChanged { speakFocused = it.isFocused },
+            )
             Text(
                 "${speakText.length}/${PingProtocol.MAX_SPEAK_LENGTH}",
                 style = MaterialTheme.typography.labelSmall,
