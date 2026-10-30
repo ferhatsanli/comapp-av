@@ -182,6 +182,12 @@ private enum class ConsoleTool(val label: String, val description: String) {
     LOGS("Logs", "Recent events, errors and crashes"),
 }
 
+/**
+ * What's open as a window in the landscape right pane, instead of the usual info cards: a
+ * Console tool, or (landscape only) the "On the network" device list.
+ */
+private enum class RightPaneView { LOGS, NETWORK_DEVICES }
+
 /** Key of the category order in [CardOrderStore]; each category's cards are saved under its name. */
 private const val CATEGORY_ORDER_KEY = "categories"
 
@@ -408,6 +414,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var consoleErrorsOnly by rememberSaveable { mutableStateOf(false) }
     // Landscape Console folder: the tool whose window is shown in the right pane, if any.
     var consoleTool by rememberSaveable { mutableStateOf<ConsoleTool?>(null) }
+    // Landscape Network folder: whether "On the network" is open as a window in the right pane.
+    var networkDevicesOpen by rememberSaveable { mutableStateOf(false) }
 
     // Reorder mode, and the user's saved order of categories and of the cards in each one.
     val context = LocalContext.current
@@ -470,6 +478,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     // back slides them out to the right again and the category list returns from the left.
     fun openCategoryFolder(category: Category) {
         consoleTool = null
+        networkDevicesOpen = false
         openCategory = category
         selectedCategory = category // keep portrait's tab in sync if the phone is rotated
         scope.launch { openProgress.animateTo(1f, tween(durationMillis = 300)) }
@@ -503,6 +512,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
 
     fun closeCategoryFolder() {
         consoleTool = null // the right pane goes back to the info cards right away
+        networkDevicesOpen = false
         scope.launch {
             openProgress.animateTo(0f, tween(durationMillis = 250))
             openCategory = null
@@ -1584,6 +1594,23 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
     }
 
+    // Landscape Network folder: Scan stays a plain, tappable card; "On the network" opens the
+    // device list as a window in the right pane instead, the same way a Console tool does.
+    val networkTools: @Composable () -> Unit = {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            scanCard()
+            if (networkDevices.isNotEmpty()) {
+                GlassFolderRow(
+                    title = "On the network",
+                    subtitle = "${networkDevices.size} device${if (networkDevices.size == 1) "" else "s"} found",
+                    accent = Category.NETWORK.accent,
+                    selected = networkDevicesOpen,
+                    onClick = { networkDevicesOpen = !networkDevicesOpen },
+                )
+            }
+        }
+    }
+
     // Landscape: the left pane works like browsing folders. At the root it lists only the
     // categories; opening one slides its cards in from the right over the list. Going back -
     // the "‹ Categories" chip, the system back button, or a left-to-right swipe anywhere on
@@ -1692,11 +1719,16 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                             )
                             Spacer(Modifier.width(8.dp))
                             // The header (and its reorder button) isn't on screen inside a
-                            // folder, so the folder bar carries its own. Console lists tools,
-                            // not cards, so there's nothing to reorder there.
-                            if (category != Category.CONSOLE) reorderButton()
+                            // folder, so the folder bar carries its own. Console lists tools, and
+                            // Network is just Scan plus the "On the network" button, so there's
+                            // nothing to reorder in either.
+                            if (category != Category.CONSOLE && category != Category.NETWORK) reorderButton()
                         }
-                        if (category == Category.CONSOLE) consoleTools() else categoryCards(category)
+                        when (category) {
+                            Category.CONSOLE -> consoleTools()
+                            Category.NETWORK -> networkTools()
+                            else -> categoryCards(category)
+                        }
                     }
                 }
             }
@@ -1879,9 +1911,13 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     landscapeNavigator()
                     verticalDivider()
                     val infoScroll = rememberScrollState()
-                    // A Console tool, while one is picked in the open Console folder; otherwise
-                    // the usual info cards.
-                    val rightPaneTool = if (openCategory == Category.CONSOLE) consoleTool else null
+                    // A Console tool, or the Network folder's device list, while one is open;
+                    // otherwise the usual info cards.
+                    val rightPaneTool = when {
+                        openCategory == Category.CONSOLE && consoleTool == ConsoleTool.LOGS -> RightPaneView.LOGS
+                        openCategory == Category.NETWORK && networkDevicesOpen -> RightPaneView.NETWORK_DEVICES
+                        else -> null
+                    }
                     LaunchedEffect(rightPaneTool) { infoScroll.scrollTo(0) }
                     Column(
                         modifier = Modifier
@@ -1905,7 +1941,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                                 verticalArrangement = Arrangement.spacedBy(14.dp),
                             ) {
                                 when (tool) {
-                                    ConsoleTool.LOGS -> consoleCard()
+                                    RightPaneView.LOGS -> consoleCard()
+                                    RightPaneView.NETWORK_DEVICES -> networkCard()
                                     null -> {
                                         connectionCard()
                                         systemInfoCard()
