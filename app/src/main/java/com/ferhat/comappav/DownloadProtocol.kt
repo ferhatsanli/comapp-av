@@ -6,7 +6,7 @@ import java.util.Locale
 
 // Plain Kotlin with no Android dependency on purpose, so it can be unit-tested on the JVM.
 
-/** Something to download on Fedora: a magnet link, a direct link, or an uploaded .torrent file. */
+/** Something to download on the server computer: a magnet link, a direct link, or an uploaded .torrent file. */
 internal data class DownloadRequest(
     val source: String,
     val url: String?,
@@ -80,9 +80,9 @@ internal object DownloadProtocol {
     /** The agent's specific DOWNLOAD_ADD error codes, in words. */
     fun describeError(code: String?): String? = when (code) {
         "NOT_A_FILE" -> "That link is a web page, not a file."
-        "NO_SPACE" -> "Not enough free space on Fedora for this download."
-        "BAD_INPUT" -> "Fedora couldn't use that link or torrent - it may be broken or invalid."
-        "ENGINE_DOWN" -> "The torrent engine (aria2) isn't running on Fedora."
+        "NO_SPACE" -> "Not enough free space on the server computer for this download."
+        "BAD_INPUT" -> "The server computer couldn't use that link or torrent - it may be broken or invalid."
+        "ENGINE_DOWN" -> "The torrent engine (aria2) isn't running on the server computer."
         else -> null
     }
 
@@ -92,7 +92,7 @@ internal object DownloadProtocol {
         code == "NETWORK" -> "Network error - the server couldn't be reached."
         code == "TIMEOUT" -> "The connection stalled for too long."
         code == "HTTP_ERROR" -> "The server refused the download."
-        code == "DISK" -> "Fedora couldn't write the file."
+        code == "DISK" -> "The server computer couldn't write the file."
         code.startsWith("ARIA2_") -> "Torrent error (aria2 code ${code.removePrefix("ARIA2_")})."
         code.startsWith("CURL_") -> "Download error (curl code ${code.removePrefix("CURL_")})."
         else -> "$code."

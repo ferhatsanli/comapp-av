@@ -184,7 +184,7 @@ private enum class ConsoleTool(val label: String, val description: String) {
 
 /**
  * What's open as a window in the landscape right pane, instead of the usual info cards: a
- * Console tool, the "On the network" device list, or the "On Fedora" download list.
+ * Console tool, the "On the network" device list, or the "On the server computer" download list.
  */
 private enum class RightPaneView { LOGS, NETWORK_DEVICES, DOWNLOADS }
 
@@ -416,7 +416,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var consoleTool by rememberSaveable { mutableStateOf<ConsoleTool?>(null) }
     // Landscape Network folder: whether "On the network" is open as a window in the right pane.
     var networkDevicesOpen by rememberSaveable { mutableStateOf(false) }
-    // Landscape Downloads folder: whether "On Fedora" is open as a window in the right pane.
+    // Landscape Downloads folder: whether "On the server computer" is open as a window in the right pane.
     var downloadsOpen by rememberSaveable { mutableStateOf(false) }
 
     // Reorder mode, and the user's saved order of categories and of the cards in each one.
@@ -441,7 +441,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var networkDevices by remember { mutableStateOf<List<NetworkDevice>>(emptyList()) }
     var networkScannedAt by remember { mutableStateOf<Long?>(null) }
     var powerSnapshot by remember { mutableStateOf<PowerSnapshot?>(null) }
-    // Downloads: Fedora's report, the saved speed limit, and the limit picked but not applied yet.
+    // Downloads: the server computer's report, the saved speed limit, and the limit picked but not applied yet.
     var downloadItems by remember { mutableStateOf<List<DownloadItem>>(emptyList()) }
     var downloadsReportedAt by remember { mutableStateOf<Long?>(null) }
     var appliedLimitMbps by remember { mutableStateOf<Int?>(null) }
@@ -564,7 +564,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     }
 
     fun sendDownload(request: DownloadRequest) {
-        AppLog.info("Downloads", "Asking Fedora to download \"${request.displayName}\" (${request.source})")
+        AppLog.info("Downloads", "Asking the server computer to download \"${request.displayName}\" (${request.source})")
         sendCommand(
             DownloadProtocol.ACTION,
             DownloadProtocol.command(user.uid, request),
@@ -812,11 +812,11 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 IncomingDownloads.pending.value = null
                 AppLog.info("Downloads", "Cancelled \"${incoming.displayName}\"")
             },
-            title = { Text("Download on Fedora?") },
+            title = { Text("Download on the server computer?") },
             text = {
                 Text(
                     "\"${incoming.displayName}\"\n$what" +
-                        if (canSend) "" else "\n\nNot ready yet - Fedora is busy or not connected. Try again in a moment.",
+                        if (canSend) "" else "\n\nNot ready yet - the server computer is busy or not connected. Try again in a moment.",
                 )
             },
             confirmButton = {
@@ -1347,8 +1347,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         GlassCommandCard(
             title = "Add download",
             tag = DownloadProtocol.ACTION,
-            description = "A .torrent file, a magnet link or a direct file link - Fedora downloads it to " +
-                "~/Downloads/ComApp. From any app you can also share a link with \"Download on Fedora\".",
+            description = "A .torrent file, a magnet link or a direct file link - the server computer downloads it to " +
+                "~/Downloads/ComApp. From any app you can also share a link with \"Download on the server computer\".",
             accent = GlassColors.Indigo,
         ) {
             GlassButton(
@@ -1376,7 +1376,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 )
             }
             GlassButton(
-                text = "Download on Fedora",
+                text = "Download on the server computer",
                 accent = GlassColors.Indigo,
                 prominent = false,
                 enabled = canSend && linkRequest != null,
@@ -1394,12 +1394,12 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         val palette = LocalGlassPalette.current
         GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Indigo, cornerRadius = 22.dp) {
             Text(
-                "On Fedora",
+                "On the server computer",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                downloadsReportedAt?.let { "Updated ${formatRelativeTime(it)}" } ?: "Waiting for Fedora's first report…",
+                downloadsReportedAt?.let { "Updated ${formatRelativeTime(it)}" } ?: "Waiting for the server computer's first report…",
                 style = MaterialTheme.typography.bodySmall,
                 color = palette.inkMuted,
             )
@@ -1470,7 +1470,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         GlassCommandCard(
             title = "Speed limit",
             tag = "SETTING",
-            description = "One limit shared by every download on Fedora, torrents and links together.",
+            description = "One limit shared by every download on the server computer, torrents and links together.",
             accent = GlassColors.Indigo,
         ) {
             val limitScroll = rememberScrollState()
@@ -1499,11 +1499,11 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
             )
             Text(
                 if (applied == null) {
-                    "Fedora hasn't reported its limit yet."
+                    "The server computer hasn't reported its limit yet."
                 } else if (applied == saved) {
-                    "Fedora is using ${DownloadProtocol.limitLabel(applied)}."
+                    "The server computer is using ${DownloadProtocol.limitLabel(applied)}."
                 } else {
-                    "Fedora is still on ${DownloadProtocol.limitLabel(applied)} - it picks up the new one within ~15 s."
+                    "The server computer is still on ${DownloadProtocol.limitLabel(applied)} - it picks up the new one within ~15 s."
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = LocalGlassPalette.current.inkMuted,
@@ -1616,7 +1616,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     }
 
     // Landscape Downloads folder: adding a download and the speed limit stay as cards (in the
-    // user's order); "On Fedora" opens the download list in the right pane, like Network's list.
+    // user's order); "On the server computer" opens the download list in the right pane, like Network's list.
     val downloadTools: @Composable () -> Unit = {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             (cardOrders[Category.DOWNLOADS] ?: Category.DOWNLOADS.cards)
@@ -1624,7 +1624,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 .forEach { id -> cardContent(id) }
             val active = downloadItems.count { it.state == "DOWNLOADING" || it.state == "QUEUED" }
             GlassFolderRow(
-                title = "On Fedora",
+                title = "On the server computer",
                 subtitle = when {
                     downloadItems.isEmpty() -> "No downloads yet"
                     active > 0 -> "$active active · ${downloadItems.size} in the list"
@@ -1864,7 +1864,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                                 PingProtocol.SCAN_ACTION -> "Network scan complete."
                                 PingProtocol.SHUTDOWN_ACTION -> "The laptop is powering off now."
                                 PingProtocol.POWER_MODE_ACTION -> "Power mode updated."
-                                DownloadProtocol.ACTION -> "Download started on Fedora - follow it under Downloads."
+                                DownloadProtocol.ACTION -> "Download started on the server computer - follow it under Downloads."
                                 else -> "PONG received from the agent."
                             },
                         )

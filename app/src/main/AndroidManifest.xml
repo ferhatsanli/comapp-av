@@ -29,26 +29,26 @@
             <!-- Remote downloads: the app only ever shows a confirmation for these; nothing
                  starts without a tap on "Download" (see IncomingDownloads). -->
             <!-- A link shared from a browser or any other app. -->
-            <intent-filter android:label="@string/download_on_fedora">
+            <intent-filter android:label="@string/download_on_server">
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
             <!-- A .torrent file shared from a file manager or a download list. -->
-            <intent-filter android:label="@string/download_on_fedora">
+            <intent-filter android:label="@string/download_on_server">
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/x-bittorrent" />
             </intent-filter>
             <!-- Tapping a magnet link in a browser. -->
-            <intent-filter android:label="@string/download_on_fedora">
+            <intent-filter android:label="@string/download_on_server">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="magnet" />
             </intent-filter>
             <!-- Opening a downloaded .torrent file. -->
-            <intent-filter android:label="@string/download_on_fedora">
+            <intent-filter android:label="@string/download_on_server">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="content" />

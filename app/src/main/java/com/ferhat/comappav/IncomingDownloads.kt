@@ -7,7 +7,7 @@ import android.provider.OpenableColumns
 import androidx.compose.runtime.mutableStateOf
 
 /**
- * Links, magnets and .torrent files that arrive from other apps ("Share" -> Download on Fedora,
+ * Links, magnets and .torrent files that arrive from other apps ("Share" -> Download on the server computer,
  * tapping a magnet link, opening a .torrent). They only wait here: the main screen asks for a
  * confirmation before anything is sent, so another app can never start a download on its own.
  */
