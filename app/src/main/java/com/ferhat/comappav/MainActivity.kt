@@ -54,6 +54,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -176,6 +177,14 @@ private const val DATABASE_URL =
 private const val ELECTRICITY_PRICE_EUR_PER_KWH = 0.324
 
 private const val PENDING_WARNING_MILLIS = 15_000L
+
+// Portrait tab swipe: a drag over this share of the screen width, or a fling faster than this,
+// switches to the neighbouring tab. While dragging, the cards follow the finger at a reduced
+// rate (less at the first/last tab, where there is nothing to switch to).
+private const val TAB_SWIPE_DISTANCE_FRACTION = 0.22f
+private const val TAB_SWIPE_VELOCITY_DP_PER_S = 400f
+private const val TAB_SWIPE_FOLLOW = 0.35f
+private const val TAB_SWIPE_FOLLOW_AT_EDGE = 0.12f
 
 /** How many log lines the Console draws; "Copy all" always includes every saved entry. */
 private const val CONSOLE_VISIBLE_ENTRIES = 150
@@ -326,6 +335,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var requestedPowerMode by remember { mutableStateOf<String?>(null) }
     // Portrait: which bottom-nav tab is active.
     var selectedCategory by rememberSaveable { mutableStateOf(Category.COMMANDS) }
+    // How far the tab content is pulled sideways by a swipe that's still in progress.
+    val tabSwipeOffset = remember { Animatable(0f) }
     // Landscape: the category "folder" that's open in the left pane, or null for the category
     // list itself. [openProgress] is 1 when that folder is fully on screen and 0 when it's slid
     // away to the right; dragging it with a swipe-back gesture moves it in between.
@@ -390,6 +401,12 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         openCategory = category
         selectedCategory = category // keep portrait's tab in sync if the phone is rotated
         scope.launch { openProgress.animateTo(1f, tween(durationMillis = 300)) }
+    }
+
+    // Portrait: step to the next (+1) or previous (-1) tab, in the user's category order.
+    fun switchTab(step: Int) {
+        val target = categoryOrder.indexOf(selectedCategory) + step
+        if (target in categoryOrder.indices) selectedCategory = categoryOrder[target]
     }
 
     fun saveOrders() {
@@ -1159,7 +1176,9 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     )
             },
             label = "category",
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer { translationX = tabSwipeOffset.value },
         ) { category ->
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -1523,9 +1542,50 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 }
             } else {
                 val portraitScroll = rememberScrollState()
+                val swipeTracker = remember { VelocityTracker() }
+                var swipeDrag by remember { mutableFloatStateOf(0f) }
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
+                        // Swipe left/right anywhere to change tab. Vertical drags still scroll
+                        // (the scroll claims them first), and horizontally scrolling rows inside
+                        // cards keep their own swipes.
+                        .pointerInput(Unit) {
+                            detectHorizontalDragGestures(
+                                onDragStart = {
+                                    swipeTracker.resetTracking()
+                                    swipeDrag = 0f
+                                },
+                                onDragEnd = {
+                                    val velocityX = swipeTracker.calculateVelocity().x
+                                    val flingVelocity = TAB_SWIPE_VELOCITY_DP_PER_S.dp.toPx()
+                                    val distance = size.width * TAB_SWIPE_DISTANCE_FRACTION
+                                    val step = when {
+                                        velocityX < -flingVelocity -> 1
+                                        velocityX > flingVelocity -> -1
+                                        swipeDrag < -distance -> 1
+                                        swipeDrag > distance -> -1
+                                        else -> 0
+                                    }
+                                    if (step != 0) switchTab(step)
+                                    swipeDrag = 0f
+                                    scope.launch { tabSwipeOffset.animateTo(0f, tween(durationMillis = 250)) }
+                                },
+                                onDragCancel = {
+                                    swipeDrag = 0f
+                                    scope.launch { tabSwipeOffset.animateTo(0f, tween(durationMillis = 200)) }
+                                },
+                            ) { change, dragAmount ->
+                                change.consume()
+                                swipeTracker.addPosition(change.uptimeMillis, change.position)
+                                swipeDrag += dragAmount
+                                val index = categoryOrder.indexOf(selectedCategory)
+                                val hasNeighbour = if (swipeDrag < 0f) index < categoryOrder.lastIndex else index > 0
+                                val follow = if (hasNeighbour) TAB_SWIPE_FOLLOW else TAB_SWIPE_FOLLOW_AT_EDGE
+                                val offset = swipeDrag * follow
+                                scope.launch { tabSwipeOffset.snapTo(offset) }
+                            }
+                        }
                         .verticalEdgeFade(portraitScroll)
                         .verticalScroll(portraitScroll)
                         .padding(horizontal = 20.dp, vertical = 16.dp),
