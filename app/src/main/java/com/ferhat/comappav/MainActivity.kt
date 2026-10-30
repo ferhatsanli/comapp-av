@@ -13,6 +13,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -21,6 +22,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -43,6 +45,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -1764,21 +1767,72 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
     }
 
+    // Tapping anywhere on System Info asks the agent for a fresh report; a spinner sits in the
+    // card's corner until the agent has published it.
     val systemInfoCard: @Composable () -> Unit = {
         powerSnapshot?.let { power ->
-            GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Amber, cornerRadius = 22.dp) {
-                Text(
-                    "System Info",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                power.reportedAt?.let { reportedAt ->
+            val palette = LocalGlassPalette.current
+            val refreshingInfo = commandAction == PingProtocol.SYSTEM_INFO_ACTION &&
+                (sending || commandStatus == "PENDING" || commandStatus == "PROCESSING")
+            GlassCard(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) {
+                        when {
+                            refreshingInfo -> Unit
+                            canSend -> {
+                                AppLog.info("System info", "Refresh requested")
+                                sendCommand(
+                                    PingProtocol.SYSTEM_INFO_ACTION,
+                                    PingProtocol.systemInfoCommand(user.uid),
+                                )
+                            }
+                            else -> Toast.makeText(
+                                context,
+                                "Can't refresh right now - another command is running or there's no connection.",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    },
+                accent = GlassColors.Amber,
+                cornerRadius = 22.dp,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "Last report: ${formatRelativeTime(reportedAt)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = LocalGlassPalette.current.inkMuted,
+                        "System Info",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f),
                     )
+                    AnimatedVisibility(visible = refreshingInfo, enter = fadeIn(), exit = fadeOut()) {
+                        // Same look as the pull-to-refresh spinner: a small round chip with a
+                        // spinning arc inside.
+                        Box(
+                            Modifier
+                                .size(30.dp)
+                                .clip(CircleShape)
+                                .background(palette.baseMid, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = GlassColors.Amber,
+                            )
+                        }
+                    }
                 }
+                Text(
+                    buildString {
+                        power.reportedAt?.let { append("Last report: ").append(formatRelativeTime(it)).append(" · ") }
+                        append(if (refreshingInfo) "Refreshing…" else "Tap to refresh")
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.inkMuted,
+                )
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     power.powerMode?.let {
                         val label = when (it) {
@@ -1864,6 +1918,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                                 PingProtocol.SCAN_ACTION -> "Network scan complete."
                                 PingProtocol.SHUTDOWN_ACTION -> "The laptop is powering off now."
                                 PingProtocol.POWER_MODE_ACTION -> "Power mode updated."
+                                PingProtocol.SYSTEM_INFO_ACTION -> "System info refreshed."
                                 DownloadProtocol.ACTION -> "Download started on the server computer - follow it under Downloads."
                                 else -> "PONG received from the agent."
                             },

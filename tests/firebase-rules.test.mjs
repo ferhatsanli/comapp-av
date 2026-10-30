@@ -364,6 +364,27 @@ try {
     }));
     await assertFails(update(command(piDb, "ping-not-mode-set"), { status: "SUCCESS", result: "MODE_SET", processingAt: null }));
   });
+  await check("SYSTEM_INFO has no extra fields and completes with REPORTED", async () => {
+    await assertSucceeds(set(command(androidDb, "info-ok"), {
+      action: "SYSTEM_INFO", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+    }));
+    await assertFails(set(command(androidDb, "info-text"), {
+      action: "SYSTEM_INFO", senderUid: ANDROID, targetUid: PI, status: "PENDING", text: "hi",
+    }));
+    await assertFails(set(command(androidDb, "info-mode"), {
+      action: "SYSTEM_INFO", senderUid: ANDROID, targetUid: PI, status: "PENDING", mode: "POWERSAVE",
+    }));
+    await assertSucceeds(update(command(piDb, "info-ok"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertFails(update(command(piDb, "info-ok"), { status: "SUCCESS", result: "PONG", processingAt: null }));
+    await assertSucceeds(update(command(piDb, "info-ok"), { status: "SUCCESS", result: "REPORTED", processingAt: null }));
+
+    // Other actions must still reject REPORTED as their result.
+    await assertSucceeds(set(command(androidDb, "ping-not-reported"), {
+      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+    }));
+    await assertSucceeds(update(command(piDb, "ping-not-reported"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertFails(update(command(piDb, "ping-not-reported"), { status: "SUCCESS", result: "REPORTED", processingAt: null }));
+  });
   await check("DOWNLOAD_ADD: magnet/URL/torrent-file sources, upload first, specific error codes", async () => {
     const dl = (over) => ({ action: "DOWNLOAD_ADD", senderUid: ANDROID, targetUid: PI, status: "PENDING", ...over });
     await assertSucceeds(set(command(androidDb, "dl-magnet"), dl({ source: "MAGNET", url: "magnet:?xt=urn:btih:abc&dn=ubuntu" })));

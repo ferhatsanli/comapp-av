@@ -11,6 +11,7 @@ internal object PingProtocol {
     const val SCAN_ACTION = "SCAN"
     const val SHUTDOWN_ACTION = "SHUTDOWN"
     const val POWER_MODE_ACTION = "POWER_MODE"
+    const val SYSTEM_INFO_ACTION = "SYSTEM_INFO"
     const val MODE_PERFORMANCE = "PERFORMANCE"
     const val MODE_POWERSAVE = "POWERSAVE"
     const val MAX_SLEEP_MINUTES = 1440
@@ -60,6 +61,14 @@ internal object PingProtocol {
         "targetUid" to PI_UID,
         "status" to "PENDING",
         "createdAt" to ServerValue.TIMESTAMP,
+    )
+
+    /** Asks the agent to measure and publish /power/latest right now. */
+    fun systemInfoCommand(senderUid: String): Map<String, String> = mapOf(
+        "action" to SYSTEM_INFO_ACTION,
+        "senderUid" to senderUid,
+        "targetUid" to PI_UID,
+        "status" to "PENDING",
     )
 
     /** [mode] must be [MODE_PERFORMANCE] or [MODE_POWERSAVE]. */
