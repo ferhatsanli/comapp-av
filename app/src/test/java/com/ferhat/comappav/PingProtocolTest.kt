@@ -58,7 +58,7 @@ class PingProtocolTest {
 
     @Test
     fun sharedErrorsAndTailscaleStatesHaveWords() {
-        for (code in listOf("NOT_PERMITTED", "UPDATE_RUNNING")) {
+        for (code in listOf("NOT_PERMITTED", "UPDATE_RUNNING", "TASKS_RUNNING")) {
             assert(PingProtocol.describeError(code) != null) { code }
         }
         assertEquals(null, PingProtocol.describeError("AGENT_ERROR"))
@@ -66,5 +66,18 @@ class PingProtocolTest {
             assert(PingProtocol.tailscaleLabel(state) != null) { state }
         }
         assertEquals(null, PingProtocol.tailscaleLabel(null))
+    }
+
+    @Test
+    fun fedoraTasksCommandIsTheBareEnvelope() {
+        assertEquals(
+            mapOf(
+                "action" to "FEDORA_TASKS",
+                "senderUid" to PingProtocol.ANDROID_UID,
+                "targetUid" to PingProtocol.PI_UID,
+                "status" to "PENDING",
+            ),
+            PingProtocol.fedoraTasksCommand(PingProtocol.ANDROID_UID),
+        )
     }
 }

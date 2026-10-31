@@ -14,6 +14,7 @@ internal object PingProtocol {
     const val SYSTEM_INFO_ACTION = "SYSTEM_INFO"
     const val TAILSCALE_ACTION = "TAILSCALE"
     const val SYSTEM_UPDATE_ACTION = "SYSTEM_UPDATE"
+    const val FEDORA_TASKS_ACTION = "FEDORA_TASKS"
     const val MODE_PERFORMANCE = "PERFORMANCE"
     const val MODE_POWERSAVE = "POWERSAVE"
     const val MAX_SLEEP_MINUTES = 1440
@@ -86,10 +87,19 @@ internal object PingProtocol {
         "status" to "PENDING",
     )
 
+    /** Pulls the agent repo on the server computer and runs tools/fedora-tasks.sh. */
+    fun fedoraTasksCommand(senderUid: String): Map<String, String> = mapOf(
+        "action" to FEDORA_TASKS_ACTION,
+        "senderUid" to senderUid,
+        "targetUid" to PI_UID,
+        "status" to "PENDING",
+    )
+
     /** Error codes shared by several commands, in words; null for ones that need no explanation. */
     fun describeError(code: String?): String? = when (code) {
         "NOT_PERMITTED" -> "The server computer isn't set up for this yet - run install-remote-admin.sh on it once."
         "UPDATE_RUNNING" -> "A system update is running on the server computer. Try again when it has finished."
+        "TASKS_RUNNING" -> "fedora-tasks.sh is already running on the server computer."
         else -> null
     }
 

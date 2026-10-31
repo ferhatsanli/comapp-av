@@ -500,6 +500,24 @@ try {
     await assertSucceeds(update(command(piDb, "upd-busy"), { status: "FAILED", errorCode: "UPDATE_RUNNING", processingAt: null }));
   });
 
+  await check("FEDORA_TASKS has no fields, answers TASKS_STARTED/TASKS_RUNNING; Pi writes /tasks/latest", async () => {
+    const cmd = (over) => ({ action: "FEDORA_TASKS", senderUid: ANDROID, targetUid: PI, status: "PENDING", ...over });
+    await assertSucceeds(set(command(androidDb, "ft"), cmd()));
+    await assertFails(set(command(androidDb, "ft-text"), cmd({ text: "x" })));
+    await assertSucceeds(update(command(piDb, "ft"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertFails(update(command(piDb, "ft"), { status: "SUCCESS", result: "UPDATE_STARTED", processingAt: null }));
+    await assertSucceeds(update(command(piDb, "ft"), { status: "SUCCESS", result: "TASKS_STARTED", processingAt: null }));
+    await assertSucceeds(set(command(androidDb, "ft-busy"), cmd()));
+    await assertSucceeds(update(command(piDb, "ft-busy"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertSucceeds(update(command(piDb, "ft-busy"), { status: "FAILED", errorCode: "TASKS_RUNNING", processingAt: null }));
+
+    await assertSucceeds(set(ref(piDb, "tasks/latest"), { state: "RUNNING", tail: "running tests", startedAt: Date.now() }));
+    await assertSucceeds(set(ref(piDb, "tasks/latest"), { state: "DONE", exitCode: 0, report: "- update.sh: OK" }));
+    await assertFails(set(ref(piDb, "tasks/latest"), { state: "DONE", log: "x" }));
+    await assertFails(set(ref(androidDb, "tasks/latest"), { state: "DONE" }));
+    await assertSucceeds(get(ref(androidDb, "tasks/latest")));
+  });
+
   await check("Pi keeps /power/history and /system/update; Android reads both", async () => {
     const key = String(Date.now());
     await assertSucceeds(set(ref(piDb, `power/history/${key}`), { cpu: 12.5, w: 7.1 }));

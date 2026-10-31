@@ -181,6 +181,8 @@ private enum class CardId(val kind: CardKind) {
     SYSTEM_UPDATE(CardKind.INTERACTIVE),
     POWER_HISTORY(CardKind.INFO),
     RECENT_COMMANDS(CardKind.INFO), // Console: in landscape it's one of the Console tools
+    SERVER_TASKS(CardKind.INTERACTIVE),
+    TASKS_REPORT(CardKind.INFO),
 }
 
 /**
@@ -195,7 +197,10 @@ private enum class Category(
     val icon: DrawScope.(Color) -> Unit,
 ) {
     COMMANDS(
-        "Commands", "Speak · Update server system", GlassColors.Blue, listOf(CardId.SPEAK, CardId.SYSTEM_UPDATE),
+        "Commands",
+        "Speak · Update server system · Server tasks",
+        GlassColors.Blue,
+        listOf(CardId.SPEAK, CardId.SYSTEM_UPDATE, CardId.SERVER_TASKS, CardId.TASKS_REPORT),
         { tint -> drawCommandsIcon(tint) },
     ),
     POWER(
@@ -283,6 +288,19 @@ private data class PowerSnapshot(
     /** ON while the graphical desktop runs; OFF in text mode (power save). */
     val desktop: String?,
 )
+
+/** /tasks/latest: the last fedora-tasks.sh run started from the phone (see the agent's server_tasks.py). */
+private data class ServerTasksRun(
+    val state: String,
+    val tail: String?,
+    val report: String?,
+    val exitCode: Long?,
+    val error: String?,
+    val startedAt: Long?,
+    val finishedAt: Long?,
+) {
+    val running: Boolean get() = state == "RUNNING"
+}
 
 /** One /power/history sample: CPU usage (%) and package power (W), either may be missing. */
 private data class PowerSample(val timeMs: Long, val cpu: Float?, val watts: Float?)
@@ -547,6 +565,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var powerHistory by remember { mutableStateOf<List<PowerSample>>(emptyList()) }
     var historyRange by rememberSaveable { mutableStateOf(HistoryRange.SIX_HOURS) }
     var systemUpdate by remember { mutableStateOf<SystemUpdateStatus?>(null) }
+    var serverTasks by remember { mutableStateOf<ServerTasksRun?>(null) }
     // Console: how many log lines are shown (10 more per "Show more"); back to 10 on a new start.
     var consoleShown by rememberSaveable { mutableIntStateOf(CONSOLE_PAGE_ENTRIES) }
     // Console: the phone's latest commands, newest first, and which ones are opened up.
@@ -839,6 +858,36 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
         recentQuery.addValueEventListener(listener)
         onDispose { recentQuery.removeEventListener(listener) }
+    }
+
+    DisposableEffect(database) {
+        val tasksRef = database.getReference("tasks/latest")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val previous = serverTasks
+                val run = snapshot.child("state").getValue(String::class.java)?.let { state ->
+                    ServerTasksRun(
+                        state = state,
+                        tail = snapshot.child("tail").getValue(String::class.java),
+                        report = snapshot.child("report").getValue(String::class.java),
+                        exitCode = snapshot.child("exitCode").getValue(Long::class.java),
+                        error = snapshot.child("error").getValue(String::class.java),
+                        startedAt = snapshot.child("startedAt").getValue(Long::class.java),
+                        finishedAt = snapshot.child("finishedAt").getValue(Long::class.java),
+                    )
+                }
+                serverTasks = run
+                if (previous?.running == true && run != null && !run.running) {
+                    AppLog.info("Server tasks", "fedora-tasks.sh ${run.state.lowercase()} (exit ${run.exitCode})")
+                }
+            }
+
+            override fun onCancelled(databaseError: DatabaseError) {
+                AppLog.warn("Server tasks", "Could not read the tasks report: ${databaseError.message}")
+            }
+        }
+        tasksRef.addValueEventListener(listener)
+        onDispose { tasksRef.removeEventListener(listener) }
     }
 
     // The last day of power samples for the Power history charts.
@@ -2062,6 +2111,81 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
     }
 
+    // Server tasks: one tap does what "cd comapp-agent && git pull --ff-only &&
+    // ./tools/fedora-tasks.sh" does in a terminal on the server computer.
+    val serverTasksCard: @Composable () -> Unit = {
+        val run = serverTasks
+        GlassCommandCard(
+            title = "Server tasks",
+            tag = "TASKS",
+            description = "Pull comapp-agent on the server computer and run tools/fedora-tasks.sh - the same " +
+                "as the three terminal lines. A step that needs your sudo password still needs a terminal.",
+            accent = GlassColors.Violet,
+        ) {
+            GlassButton(
+                text = "Start",
+                accent = GlassColors.Violet,
+                enabled = canSend && run?.running != true,
+                loading = sending && activeButton == "tasks",
+                working = activeButton == "tasks" && commandPending,
+                onClick = {
+                    activeButton = "tasks"
+                    AppLog.info("Server tasks", "fedora-tasks.sh requested")
+                    sendCommand(PingProtocol.FEDORA_TASKS_ACTION, PingProtocol.fedoraTasksCommand(user.uid))
+                },
+            )
+            Text(
+                serverTasksSummary(run),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (run?.state == "FAILED") GlassColors.Red else LocalGlassPalette.current.inkMuted,
+            )
+        }
+    }
+
+    // The output of the last run: the last lines while it runs, the REPORT block when it's done.
+    val tasksReportCard: @Composable () -> Unit = {
+        val run = serverTasks
+        val palette = LocalGlassPalette.current
+        val clipboard = LocalClipboardManager.current
+        GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Violet, cornerRadius = 22.dp) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Tasks report",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                val text = run?.report ?: run?.tail
+                if (text != null) {
+                    GlassChip(
+                        text = "Copy",
+                        onClick = {
+                            clipboard.setText(AnnotatedString(text))
+                            Toast.makeText(context, "Copied the report", Toast.LENGTH_SHORT).show()
+                        },
+                    )
+                }
+            }
+            Text(serverTasksSummary(run), style = MaterialTheme.typography.bodySmall, color = palette.inkMuted)
+            val body = when {
+                run == null -> null
+                run.running -> run.tail
+                else -> run.report ?: run.tail
+            }
+            if (body.isNullOrBlank()) {
+                Text("Nothing yet.", style = MaterialTheme.typography.bodySmall, color = palette.inkFaint)
+            } else {
+                Text(
+                    body,
+                    color = palette.ink,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                )
+            }
+        }
+    }
+
     val cardContent: @Composable (CardId) -> Unit = { id ->
         when (id) {
             CardId.PING -> pingCard()
@@ -2079,6 +2203,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
             CardId.SYSTEM_UPDATE -> systemUpdateCard()
             CardId.POWER_HISTORY -> powerHistoryCard()
             CardId.RECENT_COMMANDS -> recentCommandsCard()
+            CardId.SERVER_TASKS -> serverTasksCard()
+            CardId.TASKS_REPORT -> tasksReportCard()
         }
     }
 
@@ -2170,6 +2296,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
             }
         }
         CardId.POWER_HISTORY -> "History" to "CPU usage and power draw"
+        CardId.TASKS_REPORT -> "Tasks report" to serverTasksSummary(serverTasks)
         else -> null
     }
 
@@ -2496,6 +2623,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                                 PingProtocol.SYSTEM_INFO_ACTION -> "System info refreshed."
                                 PingProtocol.TAILSCALE_ACTION -> "Tailscale switched."
                                 PingProtocol.SYSTEM_UPDATE_ACTION -> "Update started - follow it on the Update server system card."
+                                PingProtocol.FEDORA_TASKS_ACTION -> "fedora-tasks.sh started - its output is in Tasks report."
                                 DownloadProtocol.ACTION -> "Download started on the server computer - follow it under Downloads."
                                 else -> "PONG received from the agent."
                             },
@@ -2704,6 +2832,15 @@ private fun statusColor(status: String?): Color = when (status) {
     "SUCCESS" -> GlassColors.Green
     "FAILED" -> GlassColors.Red
     else -> GlassColors.Amber
+}
+
+/** One line about the last fedora-tasks.sh run. */
+private fun serverTasksSummary(run: ServerTasksRun?): String = when {
+    run == null -> "Not run from the phone yet."
+    run.running -> "Running" + (run.startedAt?.let { " · started ${formatRelativeTime(it)}" } ?: "") + "…"
+    run.error == "INTERRUPTED" -> "Stopped before it finished."
+    run.state == "DONE" -> "Finished" + (run.finishedAt?.let { " · ${formatRelativeTime(it)}" } ?: "")
+    else -> "Failed (exit ${run.exitCode ?: "?"})" + (run.finishedAt?.let { " · ${formatRelativeTime(it)}" } ?: "")
 }
 
 private fun formatRelativeTime(epochMillis: Long): String {
