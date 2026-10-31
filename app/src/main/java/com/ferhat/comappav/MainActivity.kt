@@ -75,6 +75,7 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -179,6 +180,7 @@ private enum class CardId(val kind: CardKind) {
     TAILSCALE(CardKind.INTERACTIVE),
     SYSTEM_UPDATE(CardKind.INTERACTIVE),
     POWER_HISTORY(CardKind.INFO),
+    RECENT_COMMANDS(CardKind.INFO), // Console: in landscape it's one of the Console tools
 }
 
 /**
@@ -218,7 +220,7 @@ private enum class Category(
         { tint -> drawDownloadIcon(tint) },
     ),
     CONSOLE(
-        "Console", "App log · errors · crashes", GlassColors.Green, listOf(CardId.CONSOLE),
+        "Console", "App log · errors · recent commands", GlassColors.Green, listOf(CardId.CONSOLE, CardId.RECENT_COMMANDS),
         { tint -> drawConsoleIcon(tint) },
     ),
 }
@@ -230,6 +232,7 @@ private enum class Category(
  */
 private enum class ConsoleTool(val label: String, val description: String) {
     LOGS("Logs", "Recent events, errors and crashes"),
+    COMMANDS("Recent commands", "The last ${RecentCommands.SHOWN} commands and how they went"),
 }
 
 /**
@@ -238,7 +241,7 @@ private enum class ConsoleTool(val label: String, val description: String) {
  * The connection card stays above all of it.
  */
 private sealed interface RightPaneView {
-    data object Logs : RightPaneView
+    data class Tool(val tool: ConsoleTool) : RightPaneView
     data class Info(val card: CardId) : RightPaneView
 }
 
@@ -311,8 +314,8 @@ private const val TAB_SWIPE_VELOCITY_DP_PER_S = 400f
 private const val TAB_SWIPE_FOLLOW = 0.35f
 private const val TAB_SWIPE_FOLLOW_AT_EDGE = 0.12f
 
-/** How many log lines the Console draws; "Copy all" always includes every saved entry. */
-private const val CONSOLE_VISIBLE_ENTRIES = 150
+/** Log lines the Console shows at first, and how many more each "Show more" adds. */
+private const val CONSOLE_PAGE_ENTRIES = 10
 
 /** Running downloads first, finished ones last. */
 private fun downloadStateOrder(state: String): Int = when (state) {
@@ -542,6 +545,11 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var powerHistory by remember { mutableStateOf<List<PowerSample>>(emptyList()) }
     var historyRange by rememberSaveable { mutableStateOf(HistoryRange.SIX_HOURS) }
     var systemUpdate by remember { mutableStateOf<SystemUpdateStatus?>(null) }
+    // Console: how many log lines are shown (10 more per "Show more"); back to 10 on a new start.
+    var consoleShown by rememberSaveable { mutableIntStateOf(CONSOLE_PAGE_ENTRIES) }
+    // Console: the phone's latest commands, newest first, and which ones are opened up.
+    var recentCommands by remember { mutableStateOf<List<RecentCommand>>(emptyList()) }
+    val expandedCommands = remember { mutableStateMapOf<String, Boolean>() }
     var downloadLink by rememberSaveable { mutableStateOf("") }
     val incomingDownload by IncomingDownloads.pending
     val sleepTotal = (sleepHours.toIntOrNull() ?: 0) * 60 + (sleepMinutes.toIntOrNull() ?: 0)
@@ -798,6 +806,36 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         }
         powerRef.addValueEventListener(listener)
         onDispose { powerRef.removeEventListener(listener) }
+    }
+
+    // The phone's own latest commands, for the Console's "Recent commands" (push IDs are in
+    // time order, so the last few by key are the newest).
+    DisposableEffect(database, user.uid) {
+        val recentQuery = database.getReference("commands")
+            .orderByChild("senderUid").equalTo(user.uid).limitToLast(RecentCommands.SHOWN)
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                recentCommands = snapshot.children.mapNotNull { child ->
+                    val id = child.key ?: return@mapNotNull null
+                    val fields = child.children.associate { (it.key ?: "") to it.value }
+                    RecentCommand(
+                        id = id,
+                        action = fields["action"] as? String ?: return@mapNotNull null,
+                        status = fields["status"] as? String ?: "UNKNOWN",
+                        result = fields["result"] as? String,
+                        errorCode = fields["errorCode"] as? String,
+                        sentAtMs = RecentCommands.pushIdTimeMs(id),
+                        details = RecentCommands.details(fields),
+                    )
+                }.sortedByDescending { it.id }
+            }
+
+            override fun onCancelled(databaseError: DatabaseError) {
+                AppLog.warn("Console", "Could not read the recent commands: ${databaseError.message}")
+            }
+        }
+        recentQuery.addValueEventListener(listener)
+        onDispose { recentQuery.removeEventListener(listener) }
     }
 
     // The last day of power samples for the Power history charts.
@@ -1509,13 +1547,95 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
 
     // Console: the app's own event log (see AppLog), newest first, for spotting and sharing
     // errors. "Copy all" puts every saved entry on the clipboard, ready to paste into a chat.
+    // Console: the last few commands sent from this phone. Each line shows only the action;
+    // tapping it opens the details (when, status, result, its text or settings).
+    val recentCommandsCard: @Composable () -> Unit = {
+        val palette = LocalGlassPalette.current
+        val timeFormat = remember { java.text.SimpleDateFormat("d MMM HH:mm:ss", java.util.Locale.getDefault()) }
+        GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Green, cornerRadius = 22.dp) {
+            Text(
+                "Recent commands",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                "The last ${RecentCommands.SHOWN} sent from this phone · tap one for details",
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.inkMuted,
+            )
+            if (recentCommands.isEmpty()) {
+                Text("No commands yet.", style = MaterialTheme.typography.bodySmall, color = palette.inkFaint)
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                recentCommands.forEach { command ->
+                    val open = expandedCommands[command.id] == true
+                    val color = statusColor(command.status)
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(palette.chipFill)
+                            .clickable { expandedCommands[command.id] = !open }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(color, CircleShape),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                command.action,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(if (open) "▴" else "▾", color = palette.inkMuted)
+                        }
+                        AnimatedVisibility(visible = open) {
+                            Column(
+                                Modifier.padding(start = 18.dp, top = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                val rows = buildList {
+                                    command.sentAtMs?.let {
+                                        add("Sent" to "${timeFormat.format(java.util.Date(it))} (${formatRelativeTime(it)})")
+                                    }
+                                    add("Status" to RecentCommands.outcome(command))
+                                    (PingProtocol.describeError(command.errorCode)
+                                        ?: DownloadProtocol.describeError(command.errorCode))?.let { add("Why" to it) }
+                                    addAll(command.details)
+                                    add("ID" to command.id)
+                                }
+                                rows.forEach { (label, value) ->
+                                    Row {
+                                        Text(
+                                            label,
+                                            color = palette.inkMuted,
+                                            fontSize = 12.sp,
+                                            modifier = Modifier.width(64.dp),
+                                        )
+                                        Text(value, color = palette.ink, fontSize = 12.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     val consoleCard: @Composable () -> Unit = {
         val clipboard = LocalClipboardManager.current
         val context = LocalContext.current
         val palette = LocalGlassPalette.current
         val all = AppLog.entries
         val newestFirst = all.asReversed().filter { !consoleErrorsOnly || it.level != LogLevel.INFO }
-        val shown = newestFirst.take(CONSOLE_VISIBLE_ENTRIES)
+        val shown = newestFirst.take(consoleShown)
         // "Clear" needs a second tap within a few seconds, so a stray tap can't wipe the log.
         var confirmClear by remember { mutableStateOf(false) }
         LaunchedEffect(confirmClear) {
@@ -1612,11 +1732,22 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 }
             }
             if (newestFirst.size > shown.size) {
-                Text(
-                    "Showing the newest ${shown.size} of ${newestFirst.size}. \"Copy all\" includes everything.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = palette.inkFaint,
-                )
+                // A plain text button, like "Show more" under a list in most apps.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "${shown.size} of ${newestFirst.size}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.inkFaint,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { consoleShown += CONSOLE_PAGE_ENTRIES }) {
+                        Text(
+                            "Show ${minOf(CONSOLE_PAGE_ENTRIES, newestFirst.size - shown.size)} more",
+                            color = GlassColors.Green,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
             }
         }
     }
@@ -1943,6 +2074,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
             CardId.TAILSCALE -> tailscaleRow()
             CardId.SYSTEM_UPDATE -> systemUpdateCard()
             CardId.POWER_HISTORY -> powerHistoryCard()
+            CardId.RECENT_COMMANDS -> recentCommandsCard()
         }
     }
 
@@ -2439,7 +2571,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     // A Console tool, or an info card of the open category, while one is open.
                     val openCategoryCards = openCategory?.let { cardOrders[it] ?: it.cards }.orEmpty()
                     val rightPaneTool: RightPaneView? = when {
-                        openCategory == Category.CONSOLE && consoleTool == ConsoleTool.LOGS -> RightPaneView.Logs
+                        openCategory == Category.CONSOLE && consoleTool != null -> RightPaneView.Tool(consoleTool!!)
                         openInfoCard != null && openInfoCard in openCategoryCards -> RightPaneView.Info(openInfoCard!!)
                         else -> null
                     }
@@ -2474,7 +2606,10 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                                     errorText()
                                 }
                                 when (tool) {
-                                    RightPaneView.Logs -> consoleCard()
+                                    is RightPaneView.Tool -> when (tool.tool) {
+                                        ConsoleTool.LOGS -> consoleCard()
+                                        ConsoleTool.COMMANDS -> recentCommandsCard()
+                                    }
                                     // The opened info card goes first; the usual ones stay below it.
                                     is RightPaneView.Info -> {
                                         cardContent(tool.card)

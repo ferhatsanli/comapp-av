@@ -8,6 +8,7 @@ import {
 import {
   equalTo,
   get,
+  limitToLast,
   orderByChild,
   query,
   ref,
@@ -378,6 +379,20 @@ try {
     await assertSucceeds(update(command(piDb, "sp-en"), { status: "SUCCESS", result: "SPOKEN", processingAt: null }));
     const done = await assertSucceeds(get(command(androidDb, "sp-en")));
     assert.equal(done.val().language, "en");
+  });
+  await check("Android lists its own latest commands (sender query, at most 20); nobody else can", async () => {
+    await assertSucceeds(set(command(androidDb, "recent-1"), {
+      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+    }));
+    const mine = (db, limit) => query(ref(db, "commands"), orderByChild("senderUid"), equalTo(ANDROID), limitToLast(limit));
+    const listed = await assertSucceeds(get(mine(androidDb, 5)));
+    assert.ok(listed.child("recent-1").exists());
+    await assertSucceeds(get(mine(androidDb, 20)));
+    await assertFails(get(mine(androidDb, 50)));
+    await assertFails(get(query(ref(androidDb, "commands"), orderByChild("senderUid"), equalTo(ANDROID))));
+    await assertFails(get(ref(androidDb, "commands")));
+    await assertFails(get(query(ref(androidDb, "commands"), orderByChild("targetUid"), equalTo(PI), limitToLast(5))));
+    await assertFails(get(mine(testEnv.authenticatedContext(OTHER).database(), 5)));
   });
   await check("SYSTEM_INFO has no extra fields and completes with REPORTED", async () => {
     await assertSucceeds(set(command(androidDb, "info-ok"), {
