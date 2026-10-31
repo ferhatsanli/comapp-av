@@ -280,6 +280,8 @@ private data class PowerSnapshot(
     val ecTempC: Long?,
     val powerMode: String?,
     val tailscale: String?,
+    /** ON while the graphical desktop runs; OFF in text mode (power save). */
+    val desktop: String?,
 )
 
 /** One /power/history sample: CPU usage (%) and package power (W), either may be missing. */
@@ -796,6 +798,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     ecTempC = system.child("ecTempC").getValue(Long::class.java),
                     powerMode = snapshot.child("powerMode").getValue(String::class.java),
                     tailscale = snapshot.child("tailscale").getValue(String::class.java),
+                    desktop = snapshot.child("desktop").getValue(String::class.java),
                 )
             }
 
@@ -1426,7 +1429,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
             title = "Power mode",
             tag = PingProtocol.POWER_MODE_ACTION,
             description = "This machine runs 24/7 and never needs performance - keep it at " +
-                "the lowest power draw, or switch back to normal if you need it responsive.",
+                "the lowest power draw, or switch back to normal if you need it responsive. " +
+                "Power save also turns the desktop off (text mode); Performance brings it back.",
             accent = GlassColors.Amber,
         ) {
             // The current mode is shown in the "System Info" card; here it only decides
@@ -2430,6 +2434,11 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     power.fanRpm?.let { Text("Fan: $it RPM") }
                     power.ecTempC?.let { Text("EC temperature: $it°C") }
                     PingProtocol.tailscaleLabel(power.tailscale)?.let { Text("Tailscale: $it") }
+                    when (power.desktop) {
+                        "ON" -> Text("Desktop: On")
+                        "OFF" -> Text("Desktop: Off (text mode)")
+                        else -> Unit
+                    }
                 }
                 Text(
                     "CPU-side only: RAM, SSD, Wi-Fi/Bluetooth, and any discrete GPU aren't " +

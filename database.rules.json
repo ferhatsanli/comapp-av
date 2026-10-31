@@ -69,6 +69,7 @@
           "ecTempC": { ".validate": "newData.isNumber() && newData.val() >= -40 && newData.val() <= 150" },
           "$other": { ".validate": false }
         },
+        "desktop": { ".validate": "newData.isString() && (newData.val() === 'ON' || newData.val() === 'OFF')" },
         "tailscale": { ".validate": "newData.isString() && (newData.val() === 'RUNNING' || newData.val() === 'STOPPED' || newData.val() === 'STARTING' || newData.val() === 'NEEDS_LOGIN' || newData.val() === 'DAEMON_OFF' || newData.val() === 'NOT_INSTALLED' || newData.val() === 'UNKNOWN')" },
         "$other": { ".validate": false }
       },
