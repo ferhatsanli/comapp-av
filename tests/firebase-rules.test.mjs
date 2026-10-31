@@ -381,12 +381,13 @@ try {
     assert.equal(done.val().language, "en");
   });
   await check("Android lists its own latest commands (sender query, at most 20); nobody else can", async () => {
-    await assertSucceeds(set(command(androidDb, "recent-1"), {
+    await assertSucceeds(set(command(androidDb, "zz-recent-1"), {
       action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING",
     }));
     const mine = (db, limit) => query(ref(db, "commands"), orderByChild("senderUid"), equalTo(ANDROID), limitToLast(limit));
+    // Keys sort by name here (the app's push IDs sort by time), so this one is the newest.
     const listed = await assertSucceeds(get(mine(androidDb, 5)));
-    assert.ok(listed.child("recent-1").exists());
+    assert.ok(listed.child("zz-recent-1").exists());
     await assertSucceeds(get(mine(androidDb, 20)));
     await assertFails(get(mine(androidDb, 50)));
     await assertFails(get(query(ref(androidDb, "commands"), orderByChild("senderUid"), equalTo(ANDROID))));
