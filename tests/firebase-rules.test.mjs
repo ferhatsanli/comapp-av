@@ -518,6 +518,40 @@ try {
     await assertSucceeds(get(ref(androidDb, "tasks/latest")));
   });
 
+  await check("Power save sleep cycle: Pi writes /power/cycle, Android sets the interval, SLEEP_CYCLE_ACTIVE", async () => {
+    await assertSucceeds(set(ref(piDb, "power/cycle"), { state: "AWAKE", intervalMinutes: 20, updatedAt: Date.now() }));
+    await assertSucceeds(set(ref(piDb, "power/cycle"), { state: "AWAKE", intervalMinutes: 20, hold: "SESSION", updatedAt: Date.now() }));
+    await assertSucceeds(set(ref(piDb, "power/cycle"), {
+      state: "SLEEPING", intervalMinutes: 30, nextWakeAt: Date.now() + 1_800_000, updatedAt: Date.now(),
+    }));
+    await assertSucceeds(set(ref(piDb, "power/cycle"), { state: "OFF", intervalMinutes: 20, updatedAt: Date.now() }));
+    await assertFails(set(ref(piDb, "power/cycle"), { state: "AWAKE", intervalMinutes: 15, updatedAt: Date.now() }));
+    await assertFails(set(ref(piDb, "power/cycle"), { state: "DOZING", intervalMinutes: 20, updatedAt: Date.now() }));
+    await assertFails(set(ref(piDb, "power/cycle"), { state: "AWAKE", intervalMinutes: 20, nextWakeAt: Date.now(), updatedAt: Date.now() }));
+    await assertFails(set(ref(piDb, "power/cycle"), { state: "SLEEPING", intervalMinutes: 20, hold: "SESSION", updatedAt: Date.now() }));
+    await assertFails(set(ref(piDb, "power/cycle"), { state: "AWAKE", intervalMinutes: 20, hold: "BORED", updatedAt: Date.now() }));
+    await assertFails(set(ref(piDb, "power/cycle"), { state: "AWAKE", intervalMinutes: 20, updatedAt: Date.now(), extra: 1 }));
+    await assertFails(set(ref(piDb, "power/cycle"), { state: "AWAKE", intervalMinutes: 20 }));
+    await assertFails(set(ref(androidDb, "power/cycle"), { state: "OFF", intervalMinutes: 20, updatedAt: Date.now() }));
+    await assertSucceeds(get(ref(androidDb, "power/cycle")));
+
+    for (const minutes of [10, 20, 30, 60]) {
+      await assertSucceeds(set(ref(androidDb, "settings/sleepIntervalMinutes"), minutes));
+    }
+    await assertFails(set(ref(androidDb, "settings/sleepIntervalMinutes"), 15));
+    await assertFails(set(ref(androidDb, "settings/sleepIntervalMinutes"), "20"));
+    await assertFails(set(ref(piDb, "settings/sleepIntervalMinutes"), 20));
+    await assertSucceeds(get(ref(piDb, "settings/sleepIntervalMinutes")));
+
+    const sleep = { action: "SLEEP", senderUid: ANDROID, targetUid: PI, status: "PENDING", createdAt: serverTimestamp() };
+    await assertSucceeds(set(command(androidDb, "sleep-cycle"), sleep));
+    await assertSucceeds(update(command(piDb, "sleep-cycle"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertSucceeds(update(command(piDb, "sleep-cycle"), { status: "FAILED", errorCode: "SLEEP_CYCLE_ACTIVE", processingAt: null }));
+    await assertSucceeds(set(command(androidDb, "ping-cycle"), { action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING" }));
+    await assertSucceeds(update(command(piDb, "ping-cycle"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertFails(update(command(piDb, "ping-cycle"), { status: "FAILED", errorCode: "SLEEP_CYCLE_ACTIVE", processingAt: null }));
+  });
+
   await check("Pi keeps /power/history and /system/update; Android reads both", async () => {
     const key = String(Date.now());
     await assertSucceeds(set(ref(piDb, `power/history/${key}`), { cpu: 12.5, w: 7.1 }));

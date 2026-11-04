@@ -100,6 +100,7 @@ internal object PingProtocol {
         "NOT_PERMITTED" -> "The server computer isn't set up for this yet - run install-remote-admin.sh on it once."
         "UPDATE_RUNNING" -> "A system update is running on the server computer. Try again when it has finished."
         "TASKS_RUNNING" -> "fedora-tasks.sh is already running on the server computer."
+        "SLEEP_CYCLE_ACTIVE" -> "Power save already puts the server computer to sleep between checks. Switch to Performance to use Sleep."
         else -> null
     }
 

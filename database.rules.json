@@ -21,7 +21,7 @@
         "status": { ".validate": "newData.isString() && (newData.val() === 'PENDING' || newData.val() === 'PROCESSING' || newData.val() === 'SUCCESS' || newData.val() === 'FAILED')" },
         "processingAt": { ".validate": "newData.isNumber() && newData.val() >= now - 30000" },
         "result": { ".validate": "newData.isString() && (newData.val() === 'PONG' || newData.val() === 'SPOKEN' || newData.val() === 'SLEEPING' || newData.val() === 'SCANNED' || newData.val() === 'POWERING_OFF' || newData.val() === 'MODE_SET' || newData.val() === 'DOWNLOAD_STARTED' || newData.val() === 'REPORTED' || newData.val() === 'TAILSCALE_SET' || newData.val() === 'UPDATE_STARTED' || newData.val() === 'TASKS_STARTED')" },
-        "errorCode": { ".validate": "newData.isString() && (newData.val() === 'AGENT_ERROR' || ((newData.val() === 'NOT_A_FILE' || newData.val() === 'NO_SPACE' || newData.val() === 'BAD_INPUT' || newData.val() === 'ENGINE_DOWN') && newData.parent().child('action').val() === 'DOWNLOAD_ADD') || (newData.val() === 'NOT_PERMITTED' && (newData.parent().child('action').val() === 'TAILSCALE' || newData.parent().child('action').val() === 'SYSTEM_UPDATE')) || (newData.val() === 'UPDATE_RUNNING' && (newData.parent().child('action').val() === 'SYSTEM_UPDATE' || newData.parent().child('action').val() === 'SLEEP' || newData.parent().child('action').val() === 'SHUTDOWN')) || (newData.val() === 'TASKS_RUNNING' && newData.parent().child('action').val() === 'FEDORA_TASKS'))" },
+        "errorCode": { ".validate": "newData.isString() && (newData.val() === 'AGENT_ERROR' || ((newData.val() === 'NOT_A_FILE' || newData.val() === 'NO_SPACE' || newData.val() === 'BAD_INPUT' || newData.val() === 'ENGINE_DOWN') && newData.parent().child('action').val() === 'DOWNLOAD_ADD') || (newData.val() === 'NOT_PERMITTED' && (newData.parent().child('action').val() === 'TAILSCALE' || newData.parent().child('action').val() === 'SYSTEM_UPDATE')) || (newData.val() === 'UPDATE_RUNNING' && (newData.parent().child('action').val() === 'SYSTEM_UPDATE' || newData.parent().child('action').val() === 'SLEEP' || newData.parent().child('action').val() === 'SHUTDOWN')) || (newData.val() === 'TASKS_RUNNING' && newData.parent().child('action').val() === 'FEDORA_TASKS') || (newData.val() === 'SLEEP_CYCLE_ACTIVE' && newData.parent().child('action').val() === 'SLEEP'))" },
         "source": { ".validate": "newData.isString() && (newData.val() === 'MAGNET' || newData.val() === 'URL' || newData.val() === 'TORRENT_FILE')" },
         "url": { ".validate": "newData.isString() && newData.val().length <= 4096 && ((newData.parent().child('source').val() === 'MAGNET' && newData.val().matches(/^magnet:[?][^ ]+$/)) || (newData.parent().child('source').val() === 'URL' && newData.val().matches(/^https?:[/][/][^ ]+$/)))" },
         "$other": { ".validate": false }
@@ -73,6 +73,17 @@
         "tailscale": { ".validate": "newData.isString() && (newData.val() === 'RUNNING' || newData.val() === 'STOPPED' || newData.val() === 'STARTING' || newData.val() === 'NEEDS_LOGIN' || newData.val() === 'DAEMON_OFF' || newData.val() === 'NOT_INSTALLED' || newData.val() === 'UNKNOWN')" },
         "$other": { ".validate": false }
       },
+      "cycle": {
+        ".read": "auth != null && auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462'",
+        ".write": "auth != null && auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1'",
+        ".validate": "newData.hasChildren(['state', 'intervalMinutes', 'updatedAt'])",
+        "state": { ".validate": "newData.isString() && (newData.val() === 'OFF' || newData.val() === 'AWAKE' || newData.val() === 'SLEEPING')" },
+        "intervalMinutes": { ".validate": "newData.isNumber() && (newData.val() === 10 || newData.val() === 20 || newData.val() === 30 || newData.val() === 60)" },
+        "updatedAt": { ".validate": "newData.isNumber() && newData.val() <= now" },
+        "nextWakeAt": { ".validate": "newData.isNumber() && newData.parent().child('state').val() === 'SLEEPING' && newData.val() > now - 86400000 && newData.val() < now + 86400000" },
+        "hold": { ".validate": "newData.isString() && newData.parent().child('state').val() === 'AWAKE' && (newData.val() === 'NETWORK' || newData.val() === 'DOWNLOAD' || newData.val() === 'UPDATE' || newData.val() === 'TASKS' || newData.val() === 'SESSION' || newData.val() === 'ALARM_FAILED' || newData.val() === 'SUSPEND_FAILED')" },
+        "$other": { ".validate": false }
+      },
       "history": {
         ".read": "auth != null && (auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462' || auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1')",
         ".write": "auth != null && auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1'",
@@ -119,6 +130,11 @@
       }
     },
     "settings": {
+      "sleepIntervalMinutes": {
+        ".read": "auth != null && (auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462' || auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1')",
+        ".write": "auth != null && auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462'",
+        ".validate": "newData.isNumber() && (newData.val() === 10 || newData.val() === 20 || newData.val() === 30 || newData.val() === 60)"
+      },
       "downloadLimitMbps": {
         ".read": "auth != null && (auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462' || auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1')",
         ".write": "auth != null && auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462'",

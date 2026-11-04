@@ -76,6 +76,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -119,6 +120,7 @@ import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import com.ferhat.comappav.ui.glass.AutoSizeText
 import com.ferhat.comappav.ui.glass.GlassBottomNavItem
 import com.ferhat.comappav.ui.glass.GlassButton
 import com.ferhat.comappav.ui.glass.GlassCard
@@ -566,6 +568,11 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     var historyRange by rememberSaveable { mutableStateOf(HistoryRange.SIX_HOURS) }
     var systemUpdate by remember { mutableStateOf<SystemUpdateStatus?>(null) }
     var serverTasks by remember { mutableStateOf<ServerTasksRun?>(null) }
+    // Power save sleep cycle (/power/cycle) and the interval picked on the Power mode card.
+    var sleepCycle by remember { mutableStateOf<SleepCycleStatus?>(null) }
+    var savedSleepInterval by remember { mutableStateOf<Int?>(null) }
+    // A clock for "next wake" and "should have woken" lines; ticks every 30 s.
+    var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     // Console: how many log lines are shown (10 more per "Show more"); back to 10 on a new start.
     var consoleShown by rememberSaveable { mutableIntStateOf(CONSOLE_PAGE_ENTRIES) }
     // Console: the phone's latest commands, newest first, and which ones are opened up.
@@ -581,10 +588,13 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     val authorized = user.uid == PingProtocol.ANDROID_UID
     // A command is on its way or being carried out by the agent.
     val commandPending = sending || commandStatus == "PENDING" || commandStatus == "PROCESSING"
+    // While the server computer sleeps, commands wait in the queue - several may be sent, and
+    // they all run at the next wake-up.
+    val serverAsleep = sleepCycle?.sleeping == true
     val canSend = authorized &&
         connected == true &&
         !sending &&
-        commandStatus !in setOf("PENDING", "PROCESSING")
+        (commandStatus !in setOf("PENDING", "PROCESSING") || (serverAsleep && commandStatus == "PENDING"))
 
     // Pull-to-refresh: drop and re-open the Realtime Database connection, then wait until
     // it reports connected again (or give up after a few seconds).
@@ -707,6 +717,17 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 applyingLimit = false
                 error = exception.localizedMessage ?: "Could not save the speed limit."
                 AppLog.error("Downloads", "Could not save the speed limit: $error")
+            }
+    }
+
+    fun saveSleepInterval(minutes: Int) {
+        database.getReference(SleepCycle.SETTINGS_PATH).setValue(minutes)
+            .addOnSuccessListener {
+                AppLog.info("Power", "Power save checks every $minutes min (from the next sleep on)")
+            }
+            .addOnFailureListener { exception ->
+                error = exception.localizedMessage ?: "Could not save the sleep interval."
+                AppLog.error("Power", "Could not save the sleep interval: $error")
             }
     }
 
@@ -890,6 +911,57 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         onDispose { tasksRef.removeEventListener(listener) }
     }
 
+    DisposableEffect(database) {
+        val cycleRef = database.getReference(SleepCycle.STATUS_PATH)
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val previous = sleepCycle
+                val status = snapshot.child("state").getValue(String::class.java)?.let { state ->
+                    SleepCycleStatus(
+                        state = state,
+                        intervalMinutes = snapshot.child("intervalMinutes").getValue(Long::class.java)?.toInt()
+                            ?: SleepCycle.DEFAULT_INTERVAL,
+                        nextWakeAt = snapshot.child("nextWakeAt").getValue(Long::class.java),
+                        hold = snapshot.child("hold").getValue(String::class.java),
+                        updatedAt = snapshot.child("updatedAt").getValue(Long::class.java),
+                    )
+                }
+                sleepCycle = status
+                if (status != null && status.state != previous?.state) {
+                    SleepCycle.summary(status, System.currentTimeMillis())?.let { AppLog.info("Power", it) }
+                }
+            }
+
+            override fun onCancelled(databaseError: DatabaseError) {
+                AppLog.warn("Power", "Could not read the sleep cycle: ${databaseError.message}")
+            }
+        }
+        cycleRef.addValueEventListener(listener)
+        onDispose { cycleRef.removeEventListener(listener) }
+    }
+
+    DisposableEffect(database) {
+        val intervalRef = database.getReference(SleepCycle.SETTINGS_PATH)
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                savedSleepInterval = SleepCycle.parseInterval(snapshot.value)
+            }
+
+            override fun onCancelled(databaseError: DatabaseError) {
+                AppLog.warn("Power", "Could not read the sleep interval: ${databaseError.message}")
+            }
+        }
+        intervalRef.addValueEventListener(listener)
+        onDispose { intervalRef.removeEventListener(listener) }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            nowMs = System.currentTimeMillis()
+            delay(30_000)
+        }
+    }
+
     // The last day of power samples for the Power history charts.
     DisposableEffect(database) {
         val since = System.currentTimeMillis() - HistoryRange.DAY.millis
@@ -1018,6 +1090,11 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         val id = commandId
         if (id != null && commandStatus == "PENDING") {
             delay(PENDING_WARNING_MILLIS)
+            if (sleepCycle?.sleeping == true) {
+                // Expected: it runs at the next wake-up.
+                AppLog.info("Command", "$commandAction (${shortId(id)}) queued until the server computer wakes up")
+                return@LaunchedEffect
+            }
             AppLog.warn(
                 "Command",
                 "$commandAction (${shortId(id)}) still PENDING after ${PENDING_WARNING_MILLIS / 1000} s - " +
@@ -1218,6 +1295,30 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     fontWeight = FontWeight.Medium,
                 )
             }
+            SleepCycle.summary(sleepCycle, nowMs)?.let { line ->
+                val cycle = sleepCycle
+                val asleep = cycle?.sleeping == true
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (asleep) "[SLEEPING]" else if (cycle?.running == true) "[AWAKE]" else "[ON]",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontFamily = FontFamily.Monospace,
+                        color = when {
+                            cycle != null && SleepCycle.overdue(cycle, nowMs) -> GlassColors.Red
+                            asleep -> GlassColors.Violet
+                            else -> GlassColors.Green
+                        },
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    AutoSizeText(
+                        text = line.removePrefix("Server computer: "),
+                        modifier = Modifier.weight(1f),
+                        color = LocalGlassPalette.current.inkMuted,
+                        maxFontSize = 12.sp,
+                        textAlign = TextAlign.Start,
+                    )
+                }
+            }
         }
     }
 
@@ -1348,16 +1449,23 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
     }
 
     val sleepCard: @Composable () -> Unit = {
+        // In power save the server computer already sleeps between checks on its own.
+        val cycleRuns = sleepCycle?.running == true
         GlassCommandCard(
             title = "Sleep",
             tag = PingProtocol.SLEEP_ACTION,
-            description = "Suspend the laptop. It wakes up by itself.",
+            description = if (cycleRuns) {
+                "Not needed in power save: the laptop already sleeps between checks. Switch to " +
+                    "Performance to use Sleep."
+            } else {
+                "Suspend the laptop. It wakes up by itself."
+            },
             accent = GlassColors.Violet,
         ) {
             GlassButton(
                 text = "Sleep until morning",
                 accent = GlassColors.Violet,
-                enabled = canSend,
+                enabled = canSend && !cycleRuns,
                 working = activeButton == "sleep-morning" && commandPending,
                 onClick = {
                     activeButton = "sleep-morning"
@@ -1418,7 +1526,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                 else "Enter 1 minute to 24 hours",
                 accent = GlassColors.Violet,
                 prominent = false,
-                enabled = canSend && sleepTotalValid,
+                enabled = canSend && sleepTotalValid && !cycleRuns,
                 working = activeButton == "sleep-timed" && commandPending,
                 onClick = {
                     activeButton = "sleep-timed"
@@ -1453,13 +1561,17 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         GlassCommandCard(
             title = "Shutdown",
             tag = PingProtocol.SHUTDOWN_ACTION,
-            description = "Power the laptop off completely. No automatic wake-up - physical access is needed to turn it back on.",
+            description = if (serverAsleep) {
+                "The laptop is asleep. Shutdown only runs right away, so send it while it's awake."
+            } else {
+                "Power the laptop off completely. No automatic wake-up - physical access is needed to turn it back on."
+            },
             accent = GlassColors.Red,
         ) {
             GlassButton(
                 text = "Shut down now",
                 accent = GlassColors.Red,
-                enabled = canSend,
+                enabled = canSend && !serverAsleep,
                 loading = sending && commandAction == PingProtocol.SHUTDOWN_ACTION,
                 working = activeButton == "shutdown" && commandPending,
                 onClick = {
@@ -1477,9 +1589,10 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         GlassCommandCard(
             title = "Power mode",
             tag = PingProtocol.POWER_MODE_ACTION,
-            description = "This machine runs 24/7 and never needs performance - keep it at " +
-                "the lowest power draw, or switch back to normal if you need it responsive. " +
-                "Power save also turns the desktop off (text mode); Performance brings it back.",
+            description = "Power save: lowest power draw, desktop off (text mode), and the server " +
+                "computer sleeps - it wakes every few minutes, runs what you sent meanwhile, and " +
+                "sleeps again. SSH and Tailscale can't reach it while it sleeps. Performance keeps " +
+                "it always on, with the desktop.",
             accent = GlassColors.Amber,
         ) {
             // The current mode is shown in the "System Info" card; here it only decides
@@ -1518,6 +1631,36 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                             PingProtocol.powerModeCommand(user.uid, PingProtocol.MODE_POWERSAVE),
                         )
                     },
+                )
+            }
+            Text(
+                "In power save, check for commands every",
+                style = MaterialTheme.typography.labelLarge,
+                color = LocalGlassPalette.current.inkMuted,
+            )
+            val chosenInterval = savedSleepInterval ?: SleepCycle.DEFAULT_INTERVAL
+            val intervalScroll = rememberScrollState()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalEdgeFade(intervalScroll)
+                    .horizontalScroll(intervalScroll),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SleepCycle.INTERVALS.forEach { minutes ->
+                    GlassChip(
+                        text = "$minutes min",
+                        selected = minutes == chosenInterval,
+                        accent = GlassColors.Amber,
+                        onClick = { if (authorized && minutes != savedSleepInterval) saveSleepInterval(minutes) },
+                    )
+                }
+            }
+            if (sleepCycle?.sleeping == true && sleepCycle?.intervalMinutes != chosenInterval) {
+                Text(
+                    "The new interval starts after the next wake-up.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LocalGlassPalette.current.inkFaint,
                 )
             }
         }
@@ -2607,7 +2750,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                         }
                     }
                     if (commandStatus == "PENDING") {
-                        Text("Waiting for the agent.")
+                        Text(SleepCycle.queuedLine(sleepCycle, nowMs) ?: "Waiting for the agent.")
                     }
                     if (commandStatus == "PROCESSING") {
                         Text("The agent is processing this $commandAction.")

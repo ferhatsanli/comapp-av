@@ -58,7 +58,7 @@ class PingProtocolTest {
 
     @Test
     fun sharedErrorsAndTailscaleStatesHaveWords() {
-        for (code in listOf("NOT_PERMITTED", "UPDATE_RUNNING", "TASKS_RUNNING")) {
+        for (code in listOf("NOT_PERMITTED", "UPDATE_RUNNING", "TASKS_RUNNING", "SLEEP_CYCLE_ACTIVE")) {
             assert(PingProtocol.describeError(code) != null) { code }
         }
         assertEquals(null, PingProtocol.describeError("AGENT_ERROR"))
