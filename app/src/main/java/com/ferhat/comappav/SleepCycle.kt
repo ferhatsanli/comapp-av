@@ -15,6 +15,8 @@ internal data class SleepCycleStatus(
     val nextWakeAt: Long?,
     val hold: String?,
     val updatedAt: Long?,
+    /** What exactly holds it, e.g. "session 4: ferhat via sshd on pts/0 from 100.64.0.2". */
+    val detail: String? = null,
 ) {
     val sleeping: Boolean get() = state == SleepCycle.STATE_SLEEPING
     val running: Boolean get() = state != SleepCycle.STATE_OFF
@@ -70,9 +72,31 @@ internal object SleepCycle {
                     else -> "Server computer: asleep · next wake ${clock(wake)}"
                 }
             }
-            STATE_AWAKE -> holdLabel(status.hold)?.let { "Server computer: awake · $it" }
-                ?: "Server computer: awake · sleeps again when idle"
+            STATE_AWAKE -> holdLabel(status.hold)?.let { label ->
+                "Server computer: awake · $label" + (status.detail?.let { " ($it)" } ?: "")
+            } ?: "Server computer: awake · sleeps again when idle"
             else -> null
+        }
+    }
+
+    /**
+     * The Console line for a new /power/cycle value, or null when nothing worth logging changed
+     * (only the time stamp or the next wake-up moved).
+     */
+    fun logLine(previous: SleepCycleStatus?, current: SleepCycleStatus, nowMs: Long, clock: (Long) -> String = { clockText(it) }): String? {
+        if (previous != null && previous.state == current.state && previous.hold == current.hold &&
+            previous.detail == current.detail
+        ) {
+            return null
+        }
+        return when {
+            current.state == STATE_AWAKE && current.hold != null ->
+                "Server computer stays awake: " + (holdLabel(current.hold) ?: current.hold) + (current.detail?.let { " - $it" } ?: "")
+            current.state == STATE_AWAKE -> "Server computer is awake, nothing holds it; it sleeps after 2 min without commands"
+            current.state == STATE_SLEEPING -> current.nextWakeAt?.let {
+                "Server computer went to sleep; next wake ${clock(it)} (every ${current.intervalMinutes} min)"
+            } ?: "Server computer went to sleep"
+            else -> summary(current, nowMs, clock)
         }
     }
 

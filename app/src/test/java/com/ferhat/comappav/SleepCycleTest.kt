@@ -41,6 +41,28 @@ class SleepCycleTest {
     }
 
     @Test
+    fun logLinesSayWhatHoldsItAndOnlyOnChanges() {
+        val ssh = SleepCycleStatus("AWAKE", 10, null, "SESSION", 1L, "session 4: ferhat via sshd on pts/0")
+        assertEquals(
+            "Server computer stays awake: someone is logged in (SSH or console) - session 4: ferhat via sshd on pts/0",
+            SleepCycle.logLine(null, ssh, 0, clock),
+        )
+        assertNull(SleepCycle.logLine(ssh, ssh.copy(updatedAt = 2L), 0, clock))
+        assertEquals(
+            "Server computer went to sleep; next wake T5000 (every 10 min)",
+            SleepCycle.logLine(ssh, SleepCycleStatus("SLEEPING", 10, 5000L, null, 3L), 0, clock),
+        )
+        assertEquals(
+            "Server computer is awake, nothing holds it; it sleeps after 2 min without commands",
+            SleepCycle.logLine(ssh, status("AWAKE"), 0, clock),
+        )
+        assertEquals(
+            "Server computer: awake · someone is logged in (SSH or console) (session 4: ferhat via sshd on pts/0)",
+            SleepCycle.summary(ssh, 0, clock),
+        )
+    }
+
+    @Test
     fun queuedLineOnlyWhileAsleep() {
         assertNull(SleepCycle.queuedLine(status("AWAKE"), 0, clock))
         assertNull(SleepCycle.queuedLine(status("OFF"), 0, clock))

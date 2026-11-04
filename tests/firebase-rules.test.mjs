@@ -530,6 +530,13 @@ try {
     await assertFails(set(ref(piDb, "power/cycle"), { state: "AWAKE", intervalMinutes: 20, nextWakeAt: Date.now(), updatedAt: Date.now() }));
     await assertFails(set(ref(piDb, "power/cycle"), { state: "SLEEPING", intervalMinutes: 20, hold: "SESSION", updatedAt: Date.now() }));
     await assertFails(set(ref(piDb, "power/cycle"), { state: "AWAKE", intervalMinutes: 20, hold: "BORED", updatedAt: Date.now() }));
+    await assertSucceeds(set(ref(piDb, "power/cycle"), {
+      state: "AWAKE", intervalMinutes: 10, hold: "SESSION", detail: "session 4: ferhat via sshd on pts/0", updatedAt: Date.now(),
+    }));
+    await assertFails(set(ref(piDb, "power/cycle"), { state: "AWAKE", intervalMinutes: 10, detail: "no hold", updatedAt: Date.now() }));
+    await assertFails(set(ref(piDb, "power/cycle"), {
+      state: "AWAKE", intervalMinutes: 10, hold: "SESSION", detail: "x".repeat(161), updatedAt: Date.now(),
+    }));
     await assertFails(set(ref(piDb, "power/cycle"), { state: "AWAKE", intervalMinutes: 20, updatedAt: Date.now(), extra: 1 }));
     await assertFails(set(ref(piDb, "power/cycle"), { state: "AWAKE", intervalMinutes: 20 }));
     await assertFails(set(ref(androidDb, "power/cycle"), { state: "OFF", intervalMinutes: 20, updatedAt: Date.now() }));

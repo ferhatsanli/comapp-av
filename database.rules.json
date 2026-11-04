@@ -82,6 +82,7 @@
         "updatedAt": { ".validate": "newData.isNumber() && newData.val() <= now" },
         "nextWakeAt": { ".validate": "newData.isNumber() && newData.parent().child('state').val() === 'SLEEPING' && newData.val() > now - 86400000 && newData.val() < now + 86400000" },
         "hold": { ".validate": "newData.isString() && newData.parent().child('state').val() === 'AWAKE' && (newData.val() === 'NETWORK' || newData.val() === 'DOWNLOAD' || newData.val() === 'UPDATE' || newData.val() === 'TASKS' || newData.val() === 'SESSION' || newData.val() === 'ALARM_FAILED' || newData.val() === 'SUSPEND_FAILED')" },
+        "detail": { ".validate": "newData.isString() && newData.val().length <= 160 && newData.parent().child('state').val() === 'AWAKE' && newData.parent().child('hold').exists()" },
         "$other": { ".validate": false }
       },
       "history": {

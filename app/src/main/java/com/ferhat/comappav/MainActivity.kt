@@ -924,11 +924,18 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                         nextWakeAt = snapshot.child("nextWakeAt").getValue(Long::class.java),
                         hold = snapshot.child("hold").getValue(String::class.java),
                         updatedAt = snapshot.child("updatedAt").getValue(Long::class.java),
+                        detail = snapshot.child("detail").getValue(String::class.java),
                     )
                 }
                 sleepCycle = status
-                if (status != null && status.state != previous?.state) {
-                    SleepCycle.summary(status, System.currentTimeMillis())?.let { AppLog.info("Power", it) }
+                if (status != null) {
+                    SleepCycle.logLine(previous, status, System.currentTimeMillis())?.let { line ->
+                        if (status.hold == "ALARM_FAILED" || status.hold == "SUSPEND_FAILED") {
+                            AppLog.warn("Power", line)
+                        } else {
+                            AppLog.info("Power", line)
+                        }
+                    }
                 }
             }
 
@@ -959,6 +966,20 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
         while (true) {
             nowMs = System.currentTimeMillis()
             delay(30_000)
+        }
+    }
+
+    // Power save without any /power/cycle: the agent is too old to sleep, or the Rules don't let
+    // it publish. Say so once, a minute after the mode shows up, instead of leaving no trace.
+    val reportedMode = powerSnapshot?.powerMode
+    LaunchedEffect(reportedMode, sleepCycle == null) {
+        if (reportedMode == PingProtocol.MODE_POWERSAVE && sleepCycle == null) {
+            delay(60_000)
+            AppLog.warn(
+                "Power",
+                "Power save is on, but the server computer reports no sleep cycle - update the agent " +
+                    "(update.sh) and deploy the Rules (firebase deploy --only database).",
+            )
         }
     }
 
