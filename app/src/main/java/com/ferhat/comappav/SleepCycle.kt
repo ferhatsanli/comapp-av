@@ -43,7 +43,7 @@ internal object SleepCycle {
     }
 
     /** "03:40" in the phone's time zone. */
-    fun clock(epochMs: Long, locale: Locale = Locale.getDefault()): String =
+    fun clockText(epochMs: Long, locale: Locale = Locale.getDefault()): String =
         SimpleDateFormat("HH:mm", locale).format(Date(epochMs))
 
     fun holdLabel(hold: String?): String? = when (hold) {
@@ -58,7 +58,7 @@ internal object SleepCycle {
     }
 
     /** One line for the connection card, e.g. "Server computer: asleep · next wake 03:40". */
-    fun summary(status: SleepCycleStatus?, nowMs: Long, clock: (Long) -> String = { clock(it) }): String? {
+    fun summary(status: SleepCycleStatus?, nowMs: Long, clock: (Long) -> String = { clockText(it) }): String? {
         if (status == null) return null
         return when (status.state) {
             STATE_OFF -> "Server computer: always on (Performance)"
@@ -77,7 +77,7 @@ internal object SleepCycle {
     }
 
     /** What a PENDING command waits for while the server computer sleeps. */
-    fun queuedLine(status: SleepCycleStatus?, nowMs: Long, clock: (Long) -> String = { clock(it) }): String? {
+    fun queuedLine(status: SleepCycleStatus?, nowMs: Long, clock: (Long) -> String = { clockText(it) }): String? {
         if (status == null || !status.sleeping) return null
         val wake = status.nextWakeAt ?: return "Queued - it runs when the server computer wakes up."
         return if (overdue(status, nowMs)) {
