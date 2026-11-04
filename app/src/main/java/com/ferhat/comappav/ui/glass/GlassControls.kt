@@ -310,11 +310,13 @@ private fun GlassButtonFace(
                 color = Color.White,
             )
         } else {
-            Text(
+            // A button's label never wraps: it shrinks to fit (down to 9 sp) instead.
+            AutoSizeText(
                 text = text,
                 color = if (prominent) Color.White else palette.ink,
                 fontWeight = FontWeight.Medium,
-                fontSize = 14.sp,
+                maxFontSize = 14.sp,
+                minFontSize = 9.sp,
             )
         }
     }
@@ -359,11 +361,13 @@ fun GlassChip(
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
+        // Chips are buttons too: one line, shrinking to fit rather than wrapping.
+        AutoSizeText(
             text = text,
             color = if (selected) Color.White else palette.ink,
-            fontSize = 13.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            maxFontSize = 13.sp,
+            minFontSize = 9.sp,
         )
     }
 }

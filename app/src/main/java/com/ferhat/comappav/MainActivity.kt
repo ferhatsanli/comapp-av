@@ -109,7 +109,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -120,7 +119,6 @@ import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import com.ferhat.comappav.ui.glass.AutoSizeText
 import com.ferhat.comappav.ui.glass.GlassBottomNavItem
 import com.ferhat.comappav.ui.glass.GlassButton
 import com.ferhat.comappav.ui.glass.GlassCard
@@ -1314,12 +1312,15 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                     },
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f),
                 )
             }
             SleepCycle.summary(sleepCycle, nowMs)?.let { line ->
                 val cycle = sleepCycle
                 val asleep = cycle?.sleeping == true
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // The status tag stays on the first line; a long reason (who is logged in, from
+                // where) wraps onto more lines next to it instead of being cut off.
+                Row(verticalAlignment = Alignment.Top) {
                     Text(
                         if (asleep) "[SLEEPING]" else if (cycle?.running == true) "[AWAKE]" else "[ON]",
                         style = MaterialTheme.typography.labelMedium,
@@ -1331,12 +1332,11 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                         },
                     )
                     Spacer(Modifier.width(8.dp))
-                    AutoSizeText(
+                    Text(
                         text = line.removePrefix("Server computer: "),
                         modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
                         color = LocalGlassPalette.current.inkMuted,
-                        maxFontSize = 12.sp,
-                        textAlign = TextAlign.Start,
                     )
                 }
             }
@@ -1724,7 +1724,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                                 },
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
-                            Text(device.name, fontWeight = FontWeight.Medium)
+                            Text(device.name, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                            Spacer(Modifier.width(8.dp))
                             Text(
                                 device.ip,
                                 style = MaterialTheme.typography.bodySmall,
@@ -1835,7 +1836,7 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                                             fontSize = 12.sp,
                                             modifier = Modifier.width(64.dp),
                                         )
-                                        Text(value, color = palette.ink, fontSize = 12.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                                        Text(value, color = palette.ink, fontSize = 12.sp, modifier = Modifier.weight(1f))
                                     }
                                 }
                             }
@@ -1942,8 +1943,6 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                             color = palette.ink,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 12.sp,
-                            maxLines = 6,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -1962,6 +1961,8 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                             "Show ${minOf(CONSOLE_PAGE_ENTRIES, newestFirst.size - shown.size)} more",
                             color = GlassColors.Green,
                             fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            softWrap = false,
                         )
                     }
                 }
@@ -2070,8 +2071,6 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                         Text(
                             item.name,
                             fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
                         )
                         Spacer(Modifier.width(8.dp))
@@ -2608,8 +2607,6 @@ private fun PingScreen(user: FirebaseUser, auth: FirebaseAuth, database: Firebas
                                 category.label,
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f),
                             )
                             Spacer(Modifier.width(8.dp))
