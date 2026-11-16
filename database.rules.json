@@ -2,177 +2,392 @@
   "rules": {
     ".read": false,
     ".write": false,
-    "commands": {
-      ".indexOn": ["targetUid", "senderUid"],
-      ".read": "auth != null && ((auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1' && query.orderByChild === 'targetUid' && query.equalTo === 'N8V4nrLrELa83EXRLWJsiis85Bq1') || (auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462' && query.orderByChild === 'senderUid' && query.equalTo === auth.uid && query.limitToLast <= 20))",
-      "$commandId": {
-        ".read": "auth != null && ((auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1' && data.child('targetUid').val() === 'N8V4nrLrELa83EXRLWJsiis85Bq1') || data.child('senderUid').val() === auth.uid)",
-        ".write": "auth != null && ((auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462' && !data.exists() && newData.exists() && (newData.child('action').val() === 'PING' || newData.child('action').val() === 'SPEAK' || newData.child('action').val() === 'SLEEP' || newData.child('action').val() === 'SCAN' || newData.child('action').val() === 'SHUTDOWN' || newData.child('action').val() === 'POWER_MODE' || newData.child('action').val() === 'DOWNLOAD_ADD' || newData.child('action').val() === 'SYSTEM_INFO' || newData.child('action').val() === 'TAILSCALE' || newData.child('action').val() === 'SYSTEM_UPDATE' || newData.child('action').val() === 'FEDORA_TASKS') && newData.child('senderUid').val() === auth.uid && newData.child('targetUid').val() === 'N8V4nrLrELa83EXRLWJsiis85Bq1' && newData.child('status').val() === 'PENDING' && ((newData.child('action').val() !== 'SLEEP' && newData.child('action').val() !== 'SHUTDOWN') || (newData.child('createdAt').isNumber() && newData.child('createdAt').val() > now - 60000)) && (newData.child('action').val() !== 'DOWNLOAD_ADD' || newData.child('source').val() !== 'TORRENT_FILE' || root.child('uploads').child($commandId).child('torrent').exists())) || (auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1' && data.exists() && newData.exists() && data.child('action').val() === newData.child('action').val() && data.child('text').val() === newData.child('text').val() && data.child('createdAt').val() === newData.child('createdAt').val() && data.child('durationMinutes').val() === newData.child('durationMinutes').val() && data.child('mode').val() === newData.child('mode').val() && data.child('language').val() === newData.child('language').val() && data.child('state').val() === newData.child('state').val() && data.child('source').val() === newData.child('source').val() && data.child('url').val() === newData.child('url').val() && data.child('senderUid').val() === newData.child('senderUid').val() && data.child('targetUid').val() === newData.child('targetUid').val() && ((data.child('status').val() === 'PENDING' && newData.child('status').val() === 'PROCESSING') || (data.child('status').val() === 'PROCESSING' && data.child('processingAt').val() < now - 120000 && newData.child('status').val() === 'PROCESSING') || (data.child('status').val() === 'PROCESSING' && newData.child('status').val() === 'SUCCESS' && ((data.child('action').val() === 'PING' && newData.child('result').val() === 'PONG') || (data.child('action').val() === 'SPEAK' && newData.child('result').val() === 'SPOKEN') || (data.child('action').val() === 'SLEEP' && newData.child('result').val() === 'SLEEPING') || (data.child('action').val() === 'SCAN' && newData.child('result').val() === 'SCANNED') || (data.child('action').val() === 'SHUTDOWN' && newData.child('result').val() === 'POWERING_OFF') || (data.child('action').val() === 'POWER_MODE' && newData.child('result').val() === 'MODE_SET') || (data.child('action').val() === 'DOWNLOAD_ADD' && newData.child('result').val() === 'DOWNLOAD_STARTED') || (data.child('action').val() === 'SYSTEM_INFO' && newData.child('result').val() === 'REPORTED') || (data.child('action').val() === 'TAILSCALE' && newData.child('result').val() === 'TAILSCALE_SET') || (data.child('action').val() === 'SYSTEM_UPDATE' && newData.child('result').val() === 'UPDATE_STARTED') || (data.child('action').val() === 'FEDORA_TASKS' && newData.child('result').val() === 'TASKS_STARTED'))) || (data.child('status').val() === 'PROCESSING' && newData.child('status').val() === 'FAILED' && newData.child('errorCode').exists()))))",
-        ".validate": "newData.hasChildren(['action', 'senderUid', 'targetUid', 'status']) && (((newData.child('action').val() === 'PING' || newData.child('action').val() === 'SLEEP' || newData.child('action').val() === 'SCAN' || newData.child('action').val() === 'SHUTDOWN' || newData.child('action').val() === 'POWER_MODE' || newData.child('action').val() === 'DOWNLOAD_ADD' || newData.child('action').val() === 'SYSTEM_INFO' || newData.child('action').val() === 'TAILSCALE' || newData.child('action').val() === 'SYSTEM_UPDATE' || newData.child('action').val() === 'FEDORA_TASKS') && !newData.child('text').exists()) || (newData.child('action').val() === 'SPEAK' && newData.child('text').exists())) && (((newData.child('action').val() === 'SLEEP' || newData.child('action').val() === 'SHUTDOWN') && newData.child('createdAt').exists()) || (newData.child('action').val() !== 'SLEEP' && newData.child('action').val() !== 'SHUTDOWN' && !newData.child('createdAt').exists())) && (newData.child('action').val() === 'SLEEP' || !newData.child('durationMinutes').exists()) && (newData.child('action').val() === 'SPEAK' || !newData.child('language').exists()) && ((newData.child('action').val() === 'TAILSCALE' && newData.child('state').exists()) || (newData.child('action').val() !== 'TAILSCALE' && !newData.child('state').exists())) && ((newData.child('action').val() === 'POWER_MODE' && newData.child('mode').exists()) || (newData.child('action').val() !== 'POWER_MODE' && !newData.child('mode').exists())) && ((newData.child('action').val() === 'DOWNLOAD_ADD' && newData.child('source').exists() && ((newData.child('source').val() === 'TORRENT_FILE' && !newData.child('url').exists()) || (newData.child('source').val() !== 'TORRENT_FILE' && newData.child('url').exists()))) || (newData.child('action').val() !== 'DOWNLOAD_ADD' && !newData.child('source').exists() && !newData.child('url').exists())) && newData.child('senderUid').val() === '57HVnDSvZKNbJBabrDF4c2gnv462' && newData.child('targetUid').val() === 'N8V4nrLrELa83EXRLWJsiis85Bq1' && ((newData.child('status').val() === 'PENDING' && !newData.child('processingAt').exists() && !newData.child('result').exists() && !newData.child('errorCode').exists()) || (newData.child('status').val() === 'PROCESSING' && newData.child('processingAt').isNumber() && newData.child('processingAt').val() >= now - 30000 && !newData.child('result').exists() && !newData.child('errorCode').exists()) || (newData.child('status').val() === 'SUCCESS' && !newData.child('processingAt').exists() && ((newData.child('action').val() === 'PING' && newData.child('result').val() === 'PONG') || (newData.child('action').val() === 'SPEAK' && newData.child('result').val() === 'SPOKEN') || (newData.child('action').val() === 'SLEEP' && newData.child('result').val() === 'SLEEPING') || (newData.child('action').val() === 'SCAN' && newData.child('result').val() === 'SCANNED') || (newData.child('action').val() === 'SHUTDOWN' && newData.child('result').val() === 'POWERING_OFF') || (newData.child('action').val() === 'POWER_MODE' && newData.child('result').val() === 'MODE_SET') || (newData.child('action').val() === 'DOWNLOAD_ADD' && newData.child('result').val() === 'DOWNLOAD_STARTED') || (newData.child('action').val() === 'SYSTEM_INFO' && newData.child('result').val() === 'REPORTED') || (newData.child('action').val() === 'TAILSCALE' && newData.child('result').val() === 'TAILSCALE_SET') || (newData.child('action').val() === 'SYSTEM_UPDATE' && newData.child('result').val() === 'UPDATE_STARTED') || (newData.child('action').val() === 'FEDORA_TASKS' && newData.child('result').val() === 'TASKS_STARTED')) && !newData.child('errorCode').exists()) || (newData.child('status').val() === 'FAILED' && !newData.child('processingAt').exists() && newData.child('errorCode').exists() && !newData.child('result').exists()))",
-        "action": { ".validate": "newData.isString() && (newData.val() === 'PING' || newData.val() === 'SPEAK' || newData.val() === 'SLEEP' || newData.val() === 'SCAN' || newData.val() === 'SHUTDOWN' || newData.val() === 'POWER_MODE' || newData.val() === 'DOWNLOAD_ADD' || newData.val() === 'SYSTEM_INFO' || newData.val() === 'TAILSCALE' || newData.val() === 'SYSTEM_UPDATE' || newData.val() === 'FEDORA_TASKS')" },
-        "durationMinutes": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 1440 && newData.val() % 1 === 0" },
-        "mode": { ".validate": "newData.isString() && (newData.val() === 'PERFORMANCE' || newData.val() === 'POWERSAVE')" },
-        "createdAt": { ".validate": "newData.isNumber() && newData.val() <= now" },
-        "state": { ".validate": "newData.isString() && (newData.val() === 'UP' || newData.val() === 'DOWN')" },
-        "language": { ".validate": "newData.isString() && (newData.val() === 'tr' || newData.val() === 'en')" },
-        "text": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 300" },
-        "senderUid": { ".validate": "newData.isString() && newData.val() === '57HVnDSvZKNbJBabrDF4c2gnv462'" },
-        "targetUid": { ".validate": "newData.isString() && newData.val() === 'N8V4nrLrELa83EXRLWJsiis85Bq1'" },
-        "status": { ".validate": "newData.isString() && (newData.val() === 'PENDING' || newData.val() === 'PROCESSING' || newData.val() === 'SUCCESS' || newData.val() === 'FAILED')" },
-        "processingAt": { ".validate": "newData.isNumber() && newData.val() >= now - 30000" },
-        "result": { ".validate": "newData.isString() && (newData.val() === 'PONG' || newData.val() === 'SPOKEN' || newData.val() === 'SLEEPING' || newData.val() === 'SCANNED' || newData.val() === 'POWERING_OFF' || newData.val() === 'MODE_SET' || newData.val() === 'DOWNLOAD_STARTED' || newData.val() === 'REPORTED' || newData.val() === 'TAILSCALE_SET' || newData.val() === 'UPDATE_STARTED' || newData.val() === 'TASKS_STARTED')" },
-        "errorCode": { ".validate": "newData.isString() && (newData.val() === 'AGENT_ERROR' || ((newData.val() === 'NOT_A_FILE' || newData.val() === 'NO_SPACE' || newData.val() === 'BAD_INPUT' || newData.val() === 'ENGINE_DOWN') && newData.parent().child('action').val() === 'DOWNLOAD_ADD') || (newData.val() === 'NOT_PERMITTED' && (newData.parent().child('action').val() === 'TAILSCALE' || newData.parent().child('action').val() === 'SYSTEM_UPDATE')) || (newData.val() === 'UPDATE_RUNNING' && (newData.parent().child('action').val() === 'SYSTEM_UPDATE' || newData.parent().child('action').val() === 'SLEEP' || newData.parent().child('action').val() === 'SHUTDOWN')) || (newData.val() === 'TASKS_RUNNING' && newData.parent().child('action').val() === 'FEDORA_TASKS') || (newData.val() === 'SLEEP_CYCLE_ACTIVE' && newData.parent().child('action').val() === 'SLEEP'))" },
-        "source": { ".validate": "newData.isString() && (newData.val() === 'MAGNET' || newData.val() === 'URL' || newData.val() === 'TORRENT_FILE')" },
-        "url": { ".validate": "newData.isString() && newData.val().length <= 4096 && ((newData.parent().child('source').val() === 'MAGNET' && newData.val().matches(/^magnet:[?][^ ]+$/)) || (newData.parent().child('source').val() === 'URL' && newData.val().matches(/^https?:[/][/][^ ]+$/)))" },
-        "$other": { ".validate": false }
-      }
-    },
-    "network": {
-      "latest": {
-        ".read": "auth != null && auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462'",
-        ".write": "auth != null && auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1'",
-        ".validate": "newData.hasChildren(['scannedAt', 'devices'])",
-        "scannedAt": { ".validate": "newData.isNumber() && newData.val() <= now" },
-        "devices": {
-          "$mac": {
-            ".validate": "$mac.matches(/^([0-9A-F]{2}-){5}[0-9A-F]{2}$/) && newData.hasChildren(['ip', 'name'])",
-            "ip": { ".validate": "newData.isString() && newData.val().matches(/^(\\d{1,3}\\.){3}\\d{1,3}$/)" },
-            "name": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 60" },
-            "$other": { ".validate": false }
-          }
+    "pairing": {
+      ".indexOn": [
+        "code"
+      ],
+      ".read": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && query.orderByChild === 'code' && query.equalTo !== null && query.limitToFirst === 1",
+      "$agentUid": {
+        ".read": "auth != null && auth.uid === $agentUid",
+        ".write": "(auth != null && auth.uid === $agentUid) || (auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && !newData.exists() && newData.parent().parent().child('agents').child($agentUid).child('owner').val() === auth.uid)",
+        ".validate": "newData.hasChildren(['code', 'name', 'platform', 'createdAt'])",
+        "code": {
+          ".validate": "newData.isString() && newData.val().matches(/^[A-HJ-NP-Z2-9]{8}$/)"
         },
-        "$other": { ".validate": false }
-      }
-    },
-    "power": {
-      "latest": {
-        ".read": "auth != null && auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462'",
-        ".write": "auth != null && auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1'",
-        ".validate": "newData.hasChildren(['reportedAt'])",
-        "reportedAt": { ".validate": "newData.isNumber() && newData.val() <= now" },
-        "powerMode": { ".validate": "newData.isString() && (newData.val() === 'PERFORMANCE' || newData.val() === 'POWERSAVE' || newData.val() === 'UNKNOWN')" },
-        "cpu": {
-          "tempC": { ".validate": "newData.isNumber() && newData.val() >= -40 && newData.val() <= 150" },
-          "usagePercent": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
-          "packageWatts": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500" },
-          "coreFreqMhz": {
-            "$core": { ".validate": "$core.matches(/^cpu[0-9]+$/) && newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000" }
-          },
-          "$other": { ".validate": false }
+        "name": {
+          ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 40"
         },
-        "battery": {
-          "percent": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
-          "$other": { ".validate": false }
+        "platform": {
+          ".validate": "newData.isString() && (newData.val() === 'linux' || newData.val() === 'macos' || newData.val() === 'windows')"
         },
-        "system": {
-          "fanRpm": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 20000" },
-          "ecTempC": { ".validate": "newData.isNumber() && newData.val() >= -40 && newData.val() <= 150" },
-          "$other": { ".validate": false }
+        "createdAt": {
+          ".validate": "newData.isNumber() && newData.val() === now"
         },
-        "desktop": { ".validate": "newData.isString() && (newData.val() === 'ON' || newData.val() === 'OFF')" },
-        "tailscale": { ".validate": "newData.isString() && (newData.val() === 'RUNNING' || newData.val() === 'STOPPED' || newData.val() === 'STARTING' || newData.val() === 'NEEDS_LOGIN' || newData.val() === 'DAEMON_OFF' || newData.val() === 'NOT_INSTALLED' || newData.val() === 'UNKNOWN')" },
-        "$other": { ".validate": false }
-      },
-      "cycle": {
-        ".read": "auth != null && auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462'",
-        ".write": "auth != null && auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1'",
-        ".validate": "newData.hasChildren(['state', 'intervalMinutes', 'updatedAt'])",
-        "state": { ".validate": "newData.isString() && (newData.val() === 'OFF' || newData.val() === 'AWAKE' || newData.val() === 'SLEEPING')" },
-        "intervalMinutes": { ".validate": "newData.isNumber() && (newData.val() === 10 || newData.val() === 20 || newData.val() === 30 || newData.val() === 60)" },
-        "updatedAt": { ".validate": "newData.isNumber() && newData.val() <= now" },
-        "nextWakeAt": { ".validate": "newData.isNumber() && newData.parent().child('state').val() === 'SLEEPING' && newData.val() > now - 86400000 && newData.val() < now + 86400000" },
-        "hold": { ".validate": "newData.isString() && newData.parent().child('state').val() === 'AWAKE' && (newData.val() === 'NETWORK' || newData.val() === 'DOWNLOAD' || newData.val() === 'UPDATE' || newData.val() === 'TASKS' || newData.val() === 'SESSION' || newData.val() === 'ALARM_FAILED' || newData.val() === 'SUSPEND_FAILED')" },
-        "detail": { ".validate": "newData.isString() && newData.val().length <= 160 && newData.parent().child('state').val() === 'AWAKE' && newData.parent().child('hold').exists()" },
-        "$other": { ".validate": false }
-      },
-      "history": {
-        ".read": "auth != null && (auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462' || auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1')",
-        ".write": "auth != null && auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1'",
-        "$t": {
-          ".validate": "$t.matches(/^[0-9]{13}$/) && (newData.hasChild('cpu') || newData.hasChild('w'))",
-          "cpu": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
-          "w": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500" },
-          "$other": { ".validate": false }
+        "$other": {
+          ".validate": false
         }
       }
     },
-    "uploads": {
-      "$commandId": {
-        ".read": "auth != null && auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1'",
-        ".write": "auth != null && ((auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462' && !data.exists() && newData.exists()) || (auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1' && data.exists() && !newData.exists()))",
-        ".validate": "newData.hasChildren(['torrent'])",
-        "torrent": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 2800000" },
-        "$other": { ".validate": false }
+    "agents": {
+      "$agentUid": {
+        ".read": "auth != null && (auth.uid === $agentUid || data.child('owner').val() === auth.uid)",
+        ".write": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && !data.exists() && newData.child('owner').val() === auth.uid && root.child('pairing').child($agentUid).child('code').val() === newData.child('code').val() && root.child('pairing').child($agentUid).child('createdAt').val() > now - 600000) || (auth != null && data.exists() && !newData.exists() && (data.child('owner').val() === auth.uid || auth.uid === $agentUid))",
+        ".validate": "newData.hasChildren(['owner', 'code', 'pairedAt'])",
+        "owner": {
+          ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 128"
+        },
+        "code": {
+          ".validate": "newData.isString() && newData.val().matches(/^[A-HJ-NP-Z2-9]{8}$/)"
+        },
+        "pairedAt": {
+          ".validate": "newData.isNumber() && newData.val() === now"
+        },
+        "$other": {
+          ".validate": false
+        }
       }
     },
-    "downloads": {
-      "latest": {
-        ".read": "auth != null && auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462'",
-        ".write": "auth != null && auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1'",
-        ".validate": "newData.hasChildren(['reportedAt', 'appliedLimitMbps'])",
-        "reportedAt": { ".validate": "newData.isNumber() && newData.val() <= now" },
-        "appliedLimitMbps": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000 && newData.val() % 1 === 0" },
-        "items": {
-          "$id": {
-            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,40}$/) && newData.hasChildren(['name', 'kind', 'state', 'totalBytes', 'doneBytes', 'downBps', 'upBps'])",
-            "name": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200" },
-            "kind": { ".validate": "newData.isString() && (newData.val() === 'TORRENT' || newData.val() === 'URL')" },
-            "state": { ".validate": "newData.isString() && (newData.val() === 'QUEUED' || newData.val() === 'DOWNLOADING' || newData.val() === 'SEEDING' || newData.val() === 'COMPLETE' || newData.val() === 'FAILED' || newData.val() === 'PAUSED')" },
-            "totalBytes": { ".validate": "newData.isNumber() && newData.val() >= 0" },
-            "doneBytes": { ".validate": "newData.isNumber() && newData.val() >= 0" },
-            "downBps": { ".validate": "newData.isNumber() && newData.val() >= 0" },
-            "upBps": { ".validate": "newData.isNumber() && newData.val() >= 0" },
-            "etaSec": { ".validate": "newData.isNumber() && newData.val() >= 0" },
-            "error": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 40" },
-            "$other": { ".validate": false }
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid",
+        ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid && !newData.exists()",
+        "devices": {
+          "$deviceId": {
+            ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid && !newData.exists()",
+            "info": {
+              ".read": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid && root.child('agents').child($deviceId).child('owner').val() === $uid) || (auth != null && auth.uid === $deviceId && root.child('agents').child($deviceId).child('owner').val() === $uid))",
+              ".write": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid && newData.parent().parent().parent().parent().parent().child('agents').child($deviceId).child('owner').val() === $uid) || (auth != null && auth.uid === $deviceId && root.child('agents').child($deviceId).child('owner').val() === $uid)",
+              ".validate": "newData.hasChildren(['name', 'platform', 'pairedAt'])",
+              "name": {
+                ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 40"
+              },
+              "platform": {
+                ".validate": "newData.isString() && (newData.val() === 'linux' || newData.val() === 'macos' || newData.val() === 'windows')"
+              },
+              "pairedAt": {
+                ".validate": "newData.isNumber() && newData.val() <= now"
+              },
+              "hostname": {
+                ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 80"
+              },
+              "osVersion": {
+                ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 80"
+              },
+              "agentVersion": {
+                ".validate": "newData.isString() && newData.val().matches(/^[0-9]{1,4}(\\.[0-9]{1,4}){1,2}$/)"
+              },
+              "capabilities": {
+                "$name": {
+                  ".validate": "$name.matches(/^[a-zA-Z]{1,30}$/) && newData.isBoolean()"
+                }
+              },
+              "$other": {
+                ".validate": false
+              }
+            },
+            "commands": {
+              ".read": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid && root.child('agents').child($deviceId).child('owner').val() === $uid) && query.limitToLast <= 20) || (auth != null && auth.uid === $deviceId && root.child('agents').child($deviceId).child('owner').val() === $uid)",
+              "$commandId": {
+                ".read": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid && root.child('agents').child($deviceId).child('owner').val() === $uid) || (auth != null && auth.uid === $deviceId && root.child('agents').child($deviceId).child('owner').val() === $uid))",
+                ".write": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid && root.child('agents').child($deviceId).child('owner').val() === $uid) && !data.exists() && newData.exists() && newData.child('status').val() === 'PENDING' && (!(newData.child('action').val() === 'SLEEP' || newData.child('action').val() === 'SHUTDOWN') || (newData.child('createdAt').isNumber() && newData.child('createdAt').val() > now - 60000)) && (newData.child('action').val() !== 'DOWNLOAD_ADD' || newData.child('source').val() !== 'TORRENT_FILE' || root.child('users').child($uid).child('devices').child($deviceId).child('uploads').child($commandId).child('torrent').exists())) || ((auth != null && auth.uid === $deviceId && root.child('agents').child($deviceId).child('owner').val() === $uid) && data.exists() && newData.exists() && data.child('action').val() === newData.child('action').val() && data.child('text').val() === newData.child('text').val() && data.child('createdAt').val() === newData.child('createdAt').val() && data.child('durationMinutes').val() === newData.child('durationMinutes').val() && data.child('mode').val() === newData.child('mode').val() && data.child('language').val() === newData.child('language').val() && data.child('state').val() === newData.child('state').val() && data.child('source').val() === newData.child('source').val() && data.child('url').val() === newData.child('url').val() && ((data.child('status').val() === 'PENDING' && newData.child('status').val() === 'PROCESSING') || (data.child('status').val() === 'PROCESSING' && data.child('processingAt').val() < now - 120000 && newData.child('status').val() === 'PROCESSING') || (data.child('status').val() === 'PROCESSING' && newData.child('status').val() === 'SUCCESS' && ((data.child('action').val() === 'PING' && newData.child('result').val() === 'PONG') || (data.child('action').val() === 'SPEAK' && newData.child('result').val() === 'SPOKEN') || (data.child('action').val() === 'SLEEP' && newData.child('result').val() === 'SLEEPING') || (data.child('action').val() === 'SCAN' && newData.child('result').val() === 'SCANNED') || (data.child('action').val() === 'SHUTDOWN' && newData.child('result').val() === 'POWERING_OFF') || (data.child('action').val() === 'POWER_MODE' && newData.child('result').val() === 'MODE_SET') || (data.child('action').val() === 'DOWNLOAD_ADD' && newData.child('result').val() === 'DOWNLOAD_STARTED') || (data.child('action').val() === 'SYSTEM_INFO' && newData.child('result').val() === 'REPORTED') || (data.child('action').val() === 'TAILSCALE' && newData.child('result').val() === 'TAILSCALE_SET') || (data.child('action').val() === 'SYSTEM_UPDATE' && newData.child('result').val() === 'UPDATE_STARTED'))) || (data.child('status').val() === 'PROCESSING' && newData.child('status').val() === 'FAILED' && newData.child('errorCode').exists()))) || (!newData.exists() && data.exists() && ((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid && root.child('agents').child($deviceId).child('owner').val() === $uid) || ((auth != null && auth.uid === $deviceId && root.child('agents').child($deviceId).child('owner').val() === $uid) && (data.child('status').val() === 'SUCCESS' || data.child('status').val() === 'FAILED'))))",
+                ".validate": "newData.hasChildren(['action', 'status']) && ((newData.child('action').val() === 'SPEAK' && newData.child('text').exists()) || (newData.child('action').val() !== 'SPEAK' && !newData.child('text').exists())) && (((newData.child('action').val() === 'SLEEP' || newData.child('action').val() === 'SHUTDOWN') && newData.child('createdAt').exists()) || (!(newData.child('action').val() === 'SLEEP' || newData.child('action').val() === 'SHUTDOWN') && !newData.child('createdAt').exists())) && (newData.child('action').val() === 'SLEEP' || !newData.child('durationMinutes').exists()) && (newData.child('action').val() === 'SPEAK' || !newData.child('language').exists()) && ((newData.child('action').val() === 'TAILSCALE' && newData.child('state').exists()) || (newData.child('action').val() !== 'TAILSCALE' && !newData.child('state').exists())) && ((newData.child('action').val() === 'POWER_MODE' && newData.child('mode').exists()) || (newData.child('action').val() !== 'POWER_MODE' && !newData.child('mode').exists())) && ((newData.child('action').val() === 'DOWNLOAD_ADD' && newData.child('source').exists() && ((newData.child('source').val() === 'TORRENT_FILE' && !newData.child('url').exists()) || (newData.child('source').val() !== 'TORRENT_FILE' && newData.child('url').exists()))) || (newData.child('action').val() !== 'DOWNLOAD_ADD' && !newData.child('source').exists() && !newData.child('url').exists())) && ((newData.child('status').val() === 'PENDING' && !newData.child('processingAt').exists() && !newData.child('result').exists() && !newData.child('errorCode').exists()) || (newData.child('status').val() === 'PROCESSING' && newData.child('processingAt').isNumber() && newData.child('processingAt').val() >= now - 30000 && !newData.child('result').exists() && !newData.child('errorCode').exists()) || (newData.child('status').val() === 'SUCCESS' && !newData.child('processingAt').exists() && ((newData.child('action').val() === 'PING' && newData.child('result').val() === 'PONG') || (newData.child('action').val() === 'SPEAK' && newData.child('result').val() === 'SPOKEN') || (newData.child('action').val() === 'SLEEP' && newData.child('result').val() === 'SLEEPING') || (newData.child('action').val() === 'SCAN' && newData.child('result').val() === 'SCANNED') || (newData.child('action').val() === 'SHUTDOWN' && newData.child('result').val() === 'POWERING_OFF') || (newData.child('action').val() === 'POWER_MODE' && newData.child('result').val() === 'MODE_SET') || (newData.child('action').val() === 'DOWNLOAD_ADD' && newData.child('result').val() === 'DOWNLOAD_STARTED') || (newData.child('action').val() === 'SYSTEM_INFO' && newData.child('result').val() === 'REPORTED') || (newData.child('action').val() === 'TAILSCALE' && newData.child('result').val() === 'TAILSCALE_SET') || (newData.child('action').val() === 'SYSTEM_UPDATE' && newData.child('result').val() === 'UPDATE_STARTED')) && !newData.child('errorCode').exists()) || (newData.child('status').val() === 'FAILED' && !newData.child('processingAt').exists() && newData.child('errorCode').exists() && !newData.child('result').exists()))",
+                "action": {
+                  ".validate": "newData.isString() && (newData.val() === 'PING' || newData.val() === 'SPEAK' || newData.val() === 'SLEEP' || newData.val() === 'SCAN' || newData.val() === 'SHUTDOWN' || newData.val() === 'POWER_MODE' || newData.val() === 'DOWNLOAD_ADD' || newData.val() === 'SYSTEM_INFO' || newData.val() === 'TAILSCALE' || newData.val() === 'SYSTEM_UPDATE')"
+                },
+                "durationMinutes": {
+                  ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 1440 && newData.val() % 1 === 0"
+                },
+                "mode": {
+                  ".validate": "newData.isString() && (newData.val() === 'PERFORMANCE' || newData.val() === 'POWERSAVE')"
+                },
+                "createdAt": {
+                  ".validate": "newData.isNumber() && newData.val() <= now"
+                },
+                "state": {
+                  ".validate": "newData.isString() && (newData.val() === 'UP' || newData.val() === 'DOWN')"
+                },
+                "language": {
+                  ".validate": "newData.isString() && (newData.val() === 'tr' || newData.val() === 'en')"
+                },
+                "text": {
+                  ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 300"
+                },
+                "status": {
+                  ".validate": "newData.isString() && (newData.val() === 'PENDING' || newData.val() === 'PROCESSING' || newData.val() === 'SUCCESS' || newData.val() === 'FAILED')"
+                },
+                "processingAt": {
+                  ".validate": "newData.isNumber() && newData.val() >= now - 30000"
+                },
+                "result": {
+                  ".validate": "newData.isString() && (newData.val() === 'PONG' || newData.val() === 'SPOKEN' || newData.val() === 'SLEEPING' || newData.val() === 'SCANNED' || newData.val() === 'POWERING_OFF' || newData.val() === 'MODE_SET' || newData.val() === 'DOWNLOAD_STARTED' || newData.val() === 'REPORTED' || newData.val() === 'TAILSCALE_SET' || newData.val() === 'UPDATE_STARTED')"
+                },
+                "errorCode": {
+                  ".validate": "newData.isString() && (newData.val() === 'AGENT_ERROR' || newData.val() === 'NOT_SUPPORTED' || ((newData.val() === 'NOT_A_FILE' || newData.val() === 'NO_SPACE' || newData.val() === 'BAD_INPUT' || newData.val() === 'ENGINE_DOWN') && newData.parent().child('action').val() === 'DOWNLOAD_ADD') || (newData.val() === 'NOT_PERMITTED' && (newData.parent().child('action').val() === 'TAILSCALE' || newData.parent().child('action').val() === 'SYSTEM_UPDATE')) || (newData.val() === 'UPDATE_RUNNING' && (newData.parent().child('action').val() === 'SYSTEM_UPDATE' || newData.parent().child('action').val() === 'SLEEP' || newData.parent().child('action').val() === 'SHUTDOWN')) || (newData.val() === 'SLEEP_CYCLE_ACTIVE' && newData.parent().child('action').val() === 'SLEEP'))"
+                },
+                "source": {
+                  ".validate": "newData.isString() && (newData.val() === 'MAGNET' || newData.val() === 'URL' || newData.val() === 'TORRENT_FILE')"
+                },
+                "url": {
+                  ".validate": "newData.isString() && newData.val().length <= 4096 && ((newData.parent().child('source').val() === 'MAGNET' && newData.val().matches(/^magnet:[?][^ ]+$/)) || (newData.parent().child('source').val() === 'URL' && newData.val().matches(/^https?:[/][/][^ ]+$/)))"
+                },
+                "$other": {
+                  ".validate": false
+                }
+              }
+            },
+            "uploads": {
+              "$commandId": {
+                ".read": "(auth != null && auth.uid === $deviceId && root.child('agents').child($deviceId).child('owner').val() === $uid)",
+                ".write": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid && root.child('agents').child($deviceId).child('owner').val() === $uid) && !data.exists() && newData.exists()) || (((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid && root.child('agents').child($deviceId).child('owner').val() === $uid) || (auth != null && auth.uid === $deviceId && root.child('agents').child($deviceId).child('owner').val() === $uid)) && data.exists() && !newData.exists())",
+                ".validate": "newData.hasChildren(['torrent'])",
+                "torrent": {
+                  ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 2800000"
+                },
+                "$other": {
+                  ".validate": false
+                }
+              }
+            },
+            "settings": {
+              "sleepIntervalMinutes": {
+                ".read": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid && root.child('agents').child($deviceId).child('owner').val() === $uid) || (auth != null && auth.uid === $deviceId && root.child('agents').child($deviceId).child('owner').val() === $uid))",
+                ".write": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid && root.child('agents').child($deviceId).child('owner').val() === $uid)",
+                ".validate": "newData.isNumber() && (newData.val() === 10 || newData.val() === 20 || newData.val() === 30 || newData.val() === 60)"
+              },
+              "downloadLimitMbps": {
+                ".read": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid && root.child('agents').child($deviceId).child('owner').val() === $uid) || (auth != null && auth.uid === $deviceId && root.child('agents').child($deviceId).child('owner').val() === $uid))",
+                ".write": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid && root.child('agents').child($deviceId).child('owner').val() === $uid)",
+                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000 && newData.val() % 1 === 0"
+              }
+            },
+            "network": {
+              "latest": {
+                ".read": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid && root.child('agents').child($deviceId).child('owner').val() === $uid)",
+                ".write": "(auth != null && auth.uid === $deviceId && root.child('agents').child($deviceId).child('owner').val() === $uid)",
+                ".validate": "newData.hasChildren(['scannedAt', 'devices'])",
+                "scannedAt": {
+                  ".validate": "newData.isNumber() && newData.val() <= now"
+                },
+                "devices": {
+                  "$mac": {
+                    ".validate": "$mac.matches(/^([0-9A-F]{2}-){5}[0-9A-F]{2}$/) && newData.hasChildren(['ip', 'name'])",
+                    "ip": {
+                      ".validate": "newData.isString() && newData.val().matches(/^(\\d{1,3}\\.){3}\\d{1,3}$/)"
+                    },
+                    "name": {
+                      ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 60"
+                    },
+                    "$other": {
+                      ".validate": false
+                    }
+                  }
+                },
+                "$other": {
+                  ".validate": false
+                }
+              }
+            },
+            "power": {
+              "latest": {
+                ".read": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid && root.child('agents').child($deviceId).child('owner').val() === $uid)",
+                ".write": "(auth != null && auth.uid === $deviceId && root.child('agents').child($deviceId).child('owner').val() === $uid)",
+                ".validate": "newData.hasChildren(['reportedAt'])",
+                "reportedAt": {
+                  ".validate": "newData.isNumber() && newData.val() <= now"
+                },
+                "powerMode": {
+                  ".validate": "newData.isString() && (newData.val() === 'PERFORMANCE' || newData.val() === 'POWERSAVE' || newData.val() === 'UNKNOWN')"
+                },
+                "cpu": {
+                  "tempC": {
+                    ".validate": "newData.isNumber() && newData.val() >= -40 && newData.val() <= 150"
+                  },
+                  "usagePercent": {
+                    ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
+                  },
+                  "packageWatts": {
+                    ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500"
+                  },
+                  "coreFreqMhz": {
+                    "$core": {
+                      ".validate": "$core.matches(/^cpu[0-9]+$/) && newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000"
+                    }
+                  },
+                  "$other": {
+                    ".validate": false
+                  }
+                },
+                "battery": {
+                  "percent": {
+                    ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
+                  },
+                  "$other": {
+                    ".validate": false
+                  }
+                },
+                "system": {
+                  "fanRpm": {
+                    ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 20000"
+                  },
+                  "ecTempC": {
+                    ".validate": "newData.isNumber() && newData.val() >= -40 && newData.val() <= 150"
+                  },
+                  "$other": {
+                    ".validate": false
+                  }
+                },
+                "desktop": {
+                  ".validate": "newData.isString() && (newData.val() === 'ON' || newData.val() === 'OFF')"
+                },
+                "tailscale": {
+                  ".validate": "newData.isString() && (newData.val() === 'RUNNING' || newData.val() === 'STOPPED' || newData.val() === 'STARTING' || newData.val() === 'NEEDS_LOGIN' || newData.val() === 'DAEMON_OFF' || newData.val() === 'NOT_INSTALLED' || newData.val() === 'UNKNOWN')"
+                },
+                "$other": {
+                  ".validate": false
+                }
+              },
+              "cycle": {
+                ".read": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid && root.child('agents').child($deviceId).child('owner').val() === $uid)",
+                ".write": "(auth != null && auth.uid === $deviceId && root.child('agents').child($deviceId).child('owner').val() === $uid)",
+                ".validate": "newData.hasChildren(['state', 'intervalMinutes', 'updatedAt'])",
+                "state": {
+                  ".validate": "newData.isString() && (newData.val() === 'OFF' || newData.val() === 'AWAKE' || newData.val() === 'SLEEPING')"
+                },
+                "intervalMinutes": {
+                  ".validate": "newData.isNumber() && (newData.val() === 10 || newData.val() === 20 || newData.val() === 30 || newData.val() === 60)"
+                },
+                "updatedAt": {
+                  ".validate": "newData.isNumber() && newData.val() <= now"
+                },
+                "nextWakeAt": {
+                  ".validate": "newData.isNumber() && newData.parent().child('state').val() === 'SLEEPING' && newData.val() > now - 86400000 && newData.val() < now + 86400000"
+                },
+                "hold": {
+                  ".validate": "newData.isString() && newData.parent().child('state').val() === 'AWAKE' && (newData.val() === 'NETWORK' || newData.val() === 'DOWNLOAD' || newData.val() === 'UPDATE' || newData.val() === 'SESSION' || newData.val() === 'ALARM_FAILED' || newData.val() === 'SUSPEND_FAILED')"
+                },
+                "detail": {
+                  ".validate": "newData.isString() && newData.val().length <= 160 && newData.parent().child('state').val() === 'AWAKE' && newData.parent().child('hold').exists()"
+                },
+                "$other": {
+                  ".validate": false
+                }
+              },
+              "history": {
+                ".read": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid && root.child('agents').child($deviceId).child('owner').val() === $uid) || (auth != null && auth.uid === $deviceId && root.child('agents').child($deviceId).child('owner').val() === $uid))",
+                ".write": "(auth != null && auth.uid === $deviceId && root.child('agents').child($deviceId).child('owner').val() === $uid)",
+                "$t": {
+                  ".validate": "$t.matches(/^[0-9]{13}$/) && (newData.hasChild('cpu') || newData.hasChild('w'))",
+                  "cpu": {
+                    ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
+                  },
+                  "w": {
+                    ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500"
+                  },
+                  "$other": {
+                    ".validate": false
+                  }
+                }
+              }
+            },
+            "downloads": {
+              "latest": {
+                ".read": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid && root.child('agents').child($deviceId).child('owner').val() === $uid)",
+                ".write": "(auth != null && auth.uid === $deviceId && root.child('agents').child($deviceId).child('owner').val() === $uid)",
+                ".validate": "newData.hasChildren(['reportedAt', 'appliedLimitMbps'])",
+                "reportedAt": {
+                  ".validate": "newData.isNumber() && newData.val() <= now"
+                },
+                "appliedLimitMbps": {
+                  ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000 && newData.val() % 1 === 0"
+                },
+                "items": {
+                  "$id": {
+                    ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,40}$/) && newData.hasChildren(['name', 'kind', 'state', 'totalBytes', 'doneBytes', 'downBps', 'upBps'])",
+                    "name": {
+                      ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+                    },
+                    "kind": {
+                      ".validate": "newData.isString() && (newData.val() === 'TORRENT' || newData.val() === 'URL')"
+                    },
+                    "state": {
+                      ".validate": "newData.isString() && (newData.val() === 'QUEUED' || newData.val() === 'DOWNLOADING' || newData.val() === 'SEEDING' || newData.val() === 'COMPLETE' || newData.val() === 'FAILED' || newData.val() === 'PAUSED')"
+                    },
+                    "totalBytes": {
+                      ".validate": "newData.isNumber() && newData.val() >= 0"
+                    },
+                    "doneBytes": {
+                      ".validate": "newData.isNumber() && newData.val() >= 0"
+                    },
+                    "downBps": {
+                      ".validate": "newData.isNumber() && newData.val() >= 0"
+                    },
+                    "upBps": {
+                      ".validate": "newData.isNumber() && newData.val() >= 0"
+                    },
+                    "etaSec": {
+                      ".validate": "newData.isNumber() && newData.val() >= 0"
+                    },
+                    "error": {
+                      ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 40"
+                    },
+                    "$other": {
+                      ".validate": false
+                    }
+                  }
+                },
+                "$other": {
+                  ".validate": false
+                }
+              }
+            },
+            "system": {
+              "update": {
+                ".read": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid && root.child('agents').child($deviceId).child('owner').val() === $uid)",
+                ".write": "(auth != null && auth.uid === $deviceId && root.child('agents').child($deviceId).child('owner').val() === $uid)",
+                ".validate": "newData.hasChildren(['state', 'phase', 'percent'])",
+                "state": {
+                  ".validate": "newData.isString() && (newData.val() === 'RUNNING' || newData.val() === 'DONE' || newData.val() === 'FAILED')"
+                },
+                "phase": {
+                  ".validate": "newData.isString() && (newData.val() === 'REFRESHING' || newData.val() === 'DOWNLOADING' || newData.val() === 'INSTALLING' || newData.val() === 'VERIFYING' || newData.val() === 'FINISHED' || newData.val() === 'UP_TO_DATE')"
+                },
+                "percent": {
+                  ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100 && newData.val() % 1 === 0"
+                },
+                "done": {
+                  ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0"
+                },
+                "total": {
+                  ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0"
+                },
+                "packages": {
+                  ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0"
+                },
+                "startedAt": {
+                  ".validate": "newData.isNumber() && newData.val() <= now"
+                },
+                "finishedAt": {
+                  ".validate": "newData.isNumber() && newData.val() <= now"
+                },
+                "error": {
+                  ".validate": "newData.isString() && newData.val().length <= 40"
+                },
+                "rebootRecommended": {
+                  ".validate": "newData.isBoolean()"
+                },
+                "$other": {
+                  ".validate": false
+                }
+              }
+            },
+            "$other": {
+              ".validate": false
+            }
           }
         },
-        "$other": { ".validate": false }
-      }
-    },
-    "settings": {
-      "sleepIntervalMinutes": {
-        ".read": "auth != null && (auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462' || auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1')",
-        ".write": "auth != null && auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462'",
-        ".validate": "newData.isNumber() && (newData.val() === 10 || newData.val() === 20 || newData.val() === 30 || newData.val() === 60)"
-      },
-      "downloadLimitMbps": {
-        ".read": "auth != null && (auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462' || auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1')",
-        ".write": "auth != null && auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462'",
-        ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000 && newData.val() % 1 === 0"
-      }
-    },
-    "system": {
-      "update": {
-        ".read": "auth != null && auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462'",
-        ".write": "auth != null && auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1'",
-        ".validate": "newData.hasChildren(['state', 'phase', 'percent'])",
-        "state": { ".validate": "newData.isString() && (newData.val() === 'RUNNING' || newData.val() === 'DONE' || newData.val() === 'FAILED')" },
-        "phase": { ".validate": "newData.isString() && (newData.val() === 'REFRESHING' || newData.val() === 'DOWNLOADING' || newData.val() === 'INSTALLING' || newData.val() === 'VERIFYING' || newData.val() === 'FINISHED' || newData.val() === 'UP_TO_DATE')" },
-        "percent": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100 && newData.val() % 1 === 0" },
-        "done": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0" },
-        "total": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0" },
-        "packages": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0" },
-        "startedAt": { ".validate": "newData.isNumber() && newData.val() <= now" },
-        "finishedAt": { ".validate": "newData.isNumber() && newData.val() <= now" },
-        "error": { ".validate": "newData.isString() && newData.val().length <= 40" },
-        "rebootRecommended": { ".validate": "newData.isBoolean()" },
-        "$other": { ".validate": false }
-      }
-    },
-    "tasks": {
-      "latest": {
-        ".read": "auth != null && auth.uid === '57HVnDSvZKNbJBabrDF4c2gnv462'",
-        ".write": "auth != null && auth.uid === 'N8V4nrLrELa83EXRLWJsiis85Bq1'",
-        ".validate": "newData.hasChildren(['state'])",
-        "state": { ".validate": "newData.isString() && (newData.val() === 'RUNNING' || newData.val() === 'DONE' || newData.val() === 'FAILED')" },
-        "tail": { ".validate": "newData.isString() && newData.val().length <= 4000" },
-        "report": { ".validate": "newData.isString() && newData.val().length <= 8000" },
-        "exitCode": { ".validate": "newData.isNumber() && newData.val() % 1 === 0" },
-        "error": { ".validate": "newData.isString() && newData.val().length <= 40" },
-        "startedAt": { ".validate": "newData.isNumber() && newData.val() <= now" },
-        "finishedAt": { ".validate": "newData.isNumber() && newData.val() <= now" },
-        "$other": { ".validate": false }
+        "$other": {
+          ".validate": false
+        }
       }
     }
   }

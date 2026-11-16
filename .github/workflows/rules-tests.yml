@@ -2,7 +2,7 @@ name: Firebase Rules tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, public-release]
   pull_request:
 
 permissions:
@@ -22,6 +22,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+      - run: python3 tools/build_rules.py --check
       - run: npm ci
       - run: npm install --global firebase-tools@13
       - run: npm run test:firebase-rules

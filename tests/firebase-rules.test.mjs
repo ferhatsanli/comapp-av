@@ -8,6 +8,7 @@ import {
 import {
   equalTo,
   get,
+  limitToFirst,
   limitToLast,
   orderByChild,
   query,
@@ -17,9 +18,14 @@ import {
   update,
 } from "firebase/database";
 
-const ANDROID = "57HVnDSvZKNbJBabrDF4c2gnv462";
-const PI = "N8V4nrLrELa83EXRLWJsiis85Bq1";
-const OTHER = "different-authenticated-user";
+// One user (signed in with Google) with one paired computer, and strangers of both kinds.
+const ANDROID = "user-android";
+const PI = "agent-pi";
+const OTHER = "other-user";
+const OTHER_AGENT = "other-agent";
+const DEV = `users/${ANDROID}/devices/${PI}`;
+const GOOGLE = { firebase: { sign_in_provider: "google.com" } };
+const ANON = { firebase: { sign_in_provider: "anonymous" } };
 const rules = await readFile(new URL("../database.rules.json", import.meta.url), "utf8");
 const testEnv = await initializeTestEnvironment({
   projectId: "demo-comapp-av",
@@ -39,59 +45,142 @@ async function check(label, fn) {
 
 try {
   const anonymousDb = testEnv.unauthenticatedContext().database();
-  const androidDb = testEnv.authenticatedContext(ANDROID).database();
-  const piDb = testEnv.authenticatedContext(PI).database();
-  const command = (db, id) => ref(db, `commands/${id}`);
+  const androidDb = testEnv.authenticatedContext(ANDROID, GOOGLE).database();
+  const piDb = testEnv.authenticatedContext(PI, ANON).database();
+  const otherDb = testEnv.authenticatedContext(OTHER, GOOGLE).database();
+  const otherAgentDb = testEnv.authenticatedContext(OTHER_AGENT, ANON).database();
+  const command = (db, id) => ref(db, `${DEV}/commands/${id}`);
+  const seed = (path, value) => testEnv.withSecurityRulesDisabled((context) => set(ref(context.database(), path), value));
+  const CODE = "ABCD2345";
 
-  await check("unauthenticated read and write are denied", async () => {
-    await assertFails(get(ref(anonymousDb, "commands")));
-    await assertFails(set(command(anonymousDb, "unauth"), {
-      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING",
-    }));
+  await check("Nothing is readable or writable outside the three trees, or without signing in", async () => {
+    await assertFails(get(ref(anonymousDb, "/")));
+    await assertFails(get(ref(androidDb, "/")));
+    await assertFails(get(ref(androidDb, "users")));
+    await assertFails(get(ref(androidDb, "agents")));
+    await assertFails(set(ref(androidDb, "anything"), 1));
+    await assertFails(get(ref(anonymousDb, `${DEV}/commands`)));
+    await assertFails(set(command(anonymousDb, "unauth"), { action: "PING", status: "PENDING" }));
   });
 
-  await check("Android creates a PENDING PING and reads its own outcome", async () => {
-    await assertSucceeds(set(command(androidDb, "android-owned"), {
-      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+  await check("Pairing: the agent publishes a code, a signed-in user who knows it claims the agent", async () => {
+    const offer = { code: CODE, name: "MacBook Pro", platform: "macos", createdAt: serverTimestamp() };
+    // Only the agent itself publishes its code, in the exact shape.
+    await assertFails(set(ref(otherAgentDb, `pairing/${PI}`), offer));
+    await assertFails(set(ref(piDb, `pairing/${PI}`), { ...offer, code: "abcd2345" }));
+    await assertFails(set(ref(piDb, `pairing/${PI}`), { ...offer, code: "ABCD0OI1" }));
+    await assertFails(set(ref(piDb, `pairing/${PI}`), { ...offer, platform: "amiga" }));
+    await assertFails(set(ref(piDb, `pairing/${PI}`), { ...offer, createdAt: Date.now() - 3_600_000 }));
+    await assertFails(set(ref(piDb, `pairing/${PI}`), { ...offer, shell: "x" }));
+    await assertSucceeds(set(ref(piDb, `pairing/${PI}`), offer));
+    await assertSucceeds(get(ref(piDb, `pairing/${PI}`)));
+
+    // Codes can be looked up one at a time by signed-in users, never listed.
+    const lookup = (db, code) => query(ref(db, "pairing"), orderByChild("code"), equalTo(code), limitToFirst(1));
+    await assertFails(get(ref(androidDb, "pairing")));
+    await assertFails(get(ref(androidDb, `pairing/${PI}`)));
+    await assertFails(get(query(ref(androidDb, "pairing"), orderByChild("code"))));
+    await assertFails(get(query(ref(androidDb, "pairing"), orderByChild("code"), equalTo(CODE))));
+    await assertFails(get(lookup(otherAgentDb, CODE)));
+    await assertFails(get(lookup(anonymousDb, CODE)));
+    const found = await assertSucceeds(get(lookup(androidDb, CODE)));
+    assert.equal(found.child(PI).child("name").val(), "MacBook Pro");
+    assert.equal((await assertSucceeds(get(lookup(androidDb, "ZZZZ9999")))).exists(), false);
+
+    // The device is inert until it is claimed.
+    await assertFails(set(command(androidDb, "too-early"), { action: "PING", status: "PENDING" }));
+    await assertFails(get(ref(piDb, `${DEV}/commands`)));
+    await assertFails(set(ref(piDb, `${DEV}/power/latest`), { reportedAt: serverTimestamp() }));
+
+    const claim = (uid, code) => ({
+      [`agents/${PI}`]: { owner: uid, code, pairedAt: serverTimestamp() },
+      [`users/${uid}/devices/${PI}/info`]: { name: "MacBook Pro", platform: "macos", pairedAt: serverTimestamp() },
+      [`pairing/${PI}`]: null,
+    });
+    // Wrong code, someone else as owner, an anonymous account, or the info without the claim: no.
+    await assertFails(update(ref(androidDb), claim(ANDROID, "ZZZZ9999")));
+    await assertFails(update(ref(androidDb), claim(OTHER, CODE)));
+    await assertFails(update(ref(otherAgentDb), claim(OTHER_AGENT, CODE)));
+    await assertFails(set(ref(androidDb, `${DEV}/info`), { name: "x", platform: "macos", pairedAt: serverTimestamp() }));
+    await assertFails(set(ref(androidDb, `pairing/${PI}`), null));
+    await assertSucceeds(update(ref(androidDb), claim(ANDROID, CODE)));
+
+    // Claimed once: the code is gone and nobody else can take the agent over.
+    assert.equal((await assertSucceeds(get(ref(piDb, `pairing/${PI}`)))).exists(), false);
+    await assertSucceeds(set(ref(piDb, `pairing/${PI}`), offer));
+    await assertFails(update(ref(otherDb), claim(OTHER, CODE)));
+    await assertFails(set(ref(otherDb, `agents/${PI}/owner`), OTHER));
+    await assertSucceeds(set(ref(piDb, `pairing/${PI}`), null));
+    assert.equal((await assertSucceeds(get(ref(piDb, `agents/${PI}/owner`)))).val(), ANDROID);
+    await assertSucceeds(get(ref(androidDb, `agents/${PI}`)));
+    await assertFails(get(ref(otherDb, `agents/${PI}`)));
+  });
+
+  await check("An expired code cannot be claimed", async () => {
+    await seed(`pairing/${OTHER_AGENT}`, { code: "WXYZ6789", name: "old", platform: "linux", createdAt: Date.now() - 11 * 60_000 });
+    await assertFails(update(ref(otherDb), {
+      [`agents/${OTHER_AGENT}`]: { owner: OTHER, code: "WXYZ6789", pairedAt: serverTimestamp() },
+      [`users/${OTHER}/devices/${OTHER_AGENT}/info`]: { name: "old", platform: "linux", pairedAt: serverTimestamp() },
     }));
+    await seed(`pairing/${OTHER_AGENT}`, null);
+  });
+
+  await check("Device info: the user renames, the agent reports its facts, in a fixed shape", async () => {
+    await assertSucceeds(set(ref(androidDb, `${DEV}/info/name`), "Living room Mac"));
+    await assertFails(set(ref(androidDb, `${DEV}/info/name`), ""));
+    await assertFails(set(ref(androidDb, `${DEV}/info/name`), "x".repeat(41)));
+    await assertSucceeds(update(ref(piDb, `${DEV}/info`), {
+      hostname: "ferhats-mbp", osVersion: "macOS 15.1", agentVersion: "2.0.0",
+      capabilities: { speak: true, sleepCycle: true, systemUpdate: false },
+    }));
+    await assertFails(set(ref(piDb, `${DEV}/info/agentVersion`), "latest"));
+    await assertFails(set(ref(piDb, `${DEV}/info/capabilities/speak`), "yes"));
+    await assertFails(set(ref(piDb, `${DEV}/info/secret`), "x"));
+    await assertFails(set(ref(piDb, `${DEV}/info/platform`), "beos"));
+    await assertSucceeds(get(ref(androidDb, `users/${ANDROID}/devices`)));
+    await assertSucceeds(get(ref(piDb, `${DEV}/info`)));
+  });
+
+  await check("The user creates a PENDING PING and reads its own outcome", async () => {
+    await assertSucceeds(set(command(androidDb, "android-owned"), { action: "PING", status: "PENDING" }));
     const own = await assertSucceeds(get(command(androidDb, "android-owned")));
     assert.equal(own.val().status, "PENDING");
   });
 
-  await check("Android cannot impersonate, submit terminal status, use another action, or add fields", async () => {
+  await check("The user cannot submit a terminal status, another action, or extra fields", async () => {
     const rejected = [
-      ["forged-sender", { action: "PING", senderUid: OTHER, targetUid: PI, status: "PENDING" }],
-      ["android-success", { action: "PING", senderUid: ANDROID, targetUid: PI, status: "SUCCESS", result: "PONG" }],
-      ["android-failed", { action: "PING", senderUid: ANDROID, targetUid: PI, status: "FAILED", errorCode: "AGENT_ERROR" }],
-      ["unknown-action", { action: "SHELL", senderUid: ANDROID, targetUid: PI, status: "PENDING" }],
-      ["unexpected-field", { action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING", shellCommand: "reboot" }],
+      ["android-success", { action: "PING", status: "SUCCESS", result: "PONG" }],
+      ["android-failed", { action: "PING", status: "FAILED", errorCode: "AGENT_ERROR" }],
+      ["unknown-action", { action: "SHELL", status: "PENDING" }],
+      ["removed-action", { action: "FEDORA_TASKS", status: "PENDING" }],
+      ["unexpected-field", { action: "PING", status: "PENDING", shellCommand: "reboot" }],
+      ["old-fields", { action: "PING", status: "PENDING", senderUid: ANDROID, targetUid: PI }],
     ];
     for (const [id, value] of rejected) await assertFails(set(command(androidDb, id), value));
-    await assertFails(set(command(androidDb, "android-owned"), {
-      action: "PING", senderUid: OTHER, targetUid: PI, status: "PENDING",
-    }));
     await assertFails(update(command(androidDb, "android-owned"), { status: "SUCCESS", result: "PONG" }));
   });
 
-  await check("Android reads its command only; Pi queries only commands addressed to it", async () => {
-    await testEnv.withSecurityRulesDisabled(async (context) => {
-      await set(ref(context.database(), "commands/other-owner"), {
-        action: "PING", senderUid: OTHER, targetUid: PI, status: "PENDING",
-      });
-      await set(ref(context.database(), "commands/other-target"), {
-        action: "PING", senderUid: OTHER, targetUid: "another-agent", status: "PENDING",
-      });
-    });
-    await assertFails(get(command(androidDb, "other-owner")));
-    const piCommands = await assertSucceeds(get(query(
-      ref(piDb, "commands"),
-      orderByChild("targetUid"),
-      equalTo(PI),
-    )));
-    assert.ok(piCommands.child("android-owned").exists());
-    assert.ok(piCommands.child("other-owner").exists());
-    assert.equal(piCommands.child("other-target").exists(), false);
-    await assertFails(get(ref(piDb, "commands")));
+  await check("Users and agents are isolated: no one touches another user's device", async () => {
+    // Another user, another user's agent, and an anonymous account posing as a user.
+    await assertFails(get(command(otherDb, "android-owned")));
+    await assertFails(get(ref(otherDb, `users/${ANDROID}`)));
+    await assertFails(get(ref(otherDb, `${DEV}/info`)));
+    await assertFails(set(command(otherDb, "intruder"), { action: "SHUTDOWN", status: "PENDING", createdAt: serverTimestamp() }));
+    await assertFails(set(ref(otherDb, `${DEV}/info/name`), "pwned"));
+    await assertFails(get(ref(otherAgentDb, `${DEV}/commands`)));
+    await assertFails(update(command(otherAgentDb, "android-owned"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertFails(set(ref(otherAgentDb, `${DEV}/power/latest`), { reportedAt: serverTimestamp() }));
+    const fakeUser = testEnv.authenticatedContext(ANDROID, ANON).database();
+    await assertFails(get(ref(fakeUser, `${DEV}/info`)));
+    await assertFails(set(command(fakeUser, "anon-user"), { action: "PING", status: "PENDING" }));
+    // A user cannot conjure a device they have not paired, even under their own account.
+    await assertFails(set(ref(otherDb, `users/${OTHER}/devices/${PI}/info`), { name: "x", platform: "macos", pairedAt: serverTimestamp() }));
+    await assertFails(set(ref(otherDb, `users/${OTHER}/devices/${PI}/commands/x`), { action: "PING", status: "PENDING" }));
+    // The agent reads all of its commands; it serves only its owner.
+    const all = await assertSucceeds(get(ref(piDb, `${DEV}/commands`)));
+    assert.ok(all.child("android-owned").exists());
+    await assertFails(get(ref(piDb, `users/${OTHER}/devices/${PI}/commands`)));
+    await assertFails(get(ref(piDb, `users/${ANDROID}/devices`)));
   });
 
   await check("Pi can claim, complete, fail, and recover stale PING commands", async () => {
@@ -113,7 +202,7 @@ try {
     }));
 
     await assertSucceeds(set(command(androidDb, "android-failed"), {
-      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+      action: "PING", status: "PENDING",
     }));
     await assertSucceeds(update(command(piDb, "android-failed"), {
       status: "PROCESSING", processingAt: Date.now(),
@@ -123,8 +212,8 @@ try {
     }));
 
     await testEnv.withSecurityRulesDisabled(async (context) => {
-      await set(ref(context.database(), "commands/stale"), {
-        action: "PING", senderUid: ANDROID, targetUid: PI, status: "PROCESSING",
+      await set(ref(context.database(), `${DEV}/commands/stale`), {
+        action: "PING", status: "PROCESSING",
         processingAt: Date.now() - 180_000,
       });
     });
@@ -133,33 +222,41 @@ try {
     }));
   });
 
-  await check("Pi cannot alter immutable fields, add fields, or delete commands", async () => {
+  await check("The agent cannot alter the request or add fields; finished commands can be cleared", async () => {
     for (const patch of [
-      { senderUid: OTHER },
-      { targetUid: "another-agent" },
       { action: "SHELL" },
+      { action: "SHUTDOWN" },
       { status: "FAILED", errorCode: "AGENT_ERROR", debug: "unexpected" },
     ]) {
       await assertFails(update(command(piDb, "android-owned"), patch));
     }
-    await assertFails(set(command(piDb, "android-owned"), null));
-    await assertFails(set(command(androidDb, "android-owned"), null));
     await assertFails(update(command(androidDb, "android-owned"), { status: "FAILED", errorCode: "AGENT_ERROR" }));
+    // The agent prunes what is finished, never what is still waiting; the user clears anything.
+    await assertSucceeds(set(command(androidDb, "waiting"), { action: "PING", status: "PENDING" }));
+    await assertFails(set(command(piDb, "waiting"), null));
+    await assertFails(set(command(otherDb, "waiting"), null));
+    await assertSucceeds(set(command(androidDb, "waiting"), null));
+    await assertSucceeds(set(command(piDb, "android-failed"), null));
+    // NOT_SUPPORTED is open to every action (a platform that lacks the feature).
+    await assertSucceeds(set(command(androidDb, "unsupported"), { action: "SCAN", status: "PENDING" }));
+    await assertSucceeds(update(command(piDb, "unsupported"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertSucceeds(update(command(piDb, "unsupported"), { status: "FAILED", errorCode: "NOT_SUPPORTED", processingAt: null }));
   });
+
   await check("SPEAK carries 1-300 characters of text and completes with SPOKEN", async () => {
     const speak = (text, extra = {}) => ({
-      action: "SPEAK", senderUid: ANDROID, targetUid: PI, status: "PENDING", text, ...extra,
+      action: "SPEAK", status: "PENDING", text, ...extra,
     });
     await assertSucceeds(set(command(androidDb, "speak-ok"), speak("Merhaba Ferhat")));
     await assertSucceeds(set(command(androidDb, "speak-max"), speak("a".repeat(300))));
     await assertFails(set(command(androidDb, "speak-empty"), speak("")));
     await assertFails(set(command(androidDb, "speak-long"), speak("a".repeat(301))));
     await assertFails(set(command(androidDb, "speak-notext"), {
-      action: "SPEAK", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+      action: "SPEAK", status: "PENDING",
     }));
     await assertFails(set(command(androidDb, "speak-number"), speak(42)));
     await assertFails(set(command(androidDb, "ping-with-text"), {
-      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING", text: "hello",
+      action: "PING", status: "PENDING", text: "hello",
     }));
     await assertFails(set(command(androidDb, "speak-extra"), speak("hi", { voice: "tr" })));
     await assertFails(set(command(androidDb, "speak-success"), speak("hi", { status: "SUCCESS", result: "SPOKEN" })));
@@ -185,7 +282,7 @@ try {
 
     // PING must still finish with PONG only.
     await assertSucceeds(set(command(androidDb, "ping-again"), {
-      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+      action: "PING", status: "PENDING",
     }));
     await assertSucceeds(update(command(piDb, "ping-again"), {
       status: "PROCESSING", processingAt: Date.now(),
@@ -194,22 +291,22 @@ try {
   });
   await check("SLEEP needs a fresh server timestamp, carries no text, and completes with SLEEPING", async () => {
     const sleep = (extra = {}) => ({
-      action: "SLEEP", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+      action: "SLEEP", status: "PENDING",
       createdAt: serverTimestamp(), ...extra,
     });
     await assertSucceeds(set(command(androidDb, "sleep-ok"), sleep()));
     await assertFails(set(command(androidDb, "sleep-no-time"), {
-      action: "SLEEP", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+      action: "SLEEP", status: "PENDING",
     }));
     await assertFails(set(command(androidDb, "sleep-old"), sleep({ createdAt: Date.now() - 120_000 })));
     await assertFails(set(command(androidDb, "sleep-future"), sleep({ createdAt: Date.now() + 3_600_000 })));
     await assertFails(set(command(androidDb, "sleep-text"), sleep({ text: "hello" })));
     await assertFails(set(command(androidDb, "sleep-extra"), sleep({ delay: 5 })));
     await assertFails(set(command(androidDb, "ping-with-time"), {
-      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING", createdAt: serverTimestamp(),
+      action: "PING", status: "PENDING", createdAt: serverTimestamp(),
     }));
     await assertFails(set(command(androidDb, "speak-with-time"), {
-      action: "SPEAK", senderUid: ANDROID, targetUid: PI, status: "PENDING", text: "hi",
+      action: "SPEAK", status: "PENDING", text: "hi",
       createdAt: serverTimestamp(),
     }));
 
@@ -228,7 +325,7 @@ try {
   });
   await check("SLEEP accepts a whole number of minutes from 1 to 1440, only on SLEEP, and the Pi cannot change it", async () => {
     const timed = (durationMinutes) => ({
-      action: "SLEEP", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+      action: "SLEEP", status: "PENDING",
       createdAt: serverTimestamp(), durationMinutes,
     });
     for (const minutes of [1, 2, 80, 1440]) {
@@ -240,10 +337,10 @@ try {
       await assertFails(set(command(androidDb, `sleep-bad-${id}`), timed(value)));
     }
     await assertFails(set(command(androidDb, "ping-with-duration"), {
-      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING", durationMinutes: 5,
+      action: "PING", status: "PENDING", durationMinutes: 5,
     }));
     await assertFails(set(command(androidDb, "speak-with-duration"), {
-      action: "SPEAK", senderUid: ANDROID, targetUid: PI, status: "PENDING", text: "hi", durationMinutes: 5,
+      action: "SPEAK", status: "PENDING", text: "hi", durationMinutes: 5,
     }));
 
     await assertSucceeds(update(command(piDb, "sleep-80"), {
@@ -258,12 +355,12 @@ try {
   });
   await check("SHUTDOWN needs a fresh server timestamp, carries no text/duration, and completes with POWERING_OFF", async () => {
     const shutdown = (extra = {}) => ({
-      action: "SHUTDOWN", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+      action: "SHUTDOWN", status: "PENDING",
       createdAt: serverTimestamp(), ...extra,
     });
     await assertSucceeds(set(command(androidDb, "shutdown-ok"), shutdown()));
     await assertFails(set(command(androidDb, "shutdown-no-time"), {
-      action: "SHUTDOWN", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+      action: "SHUTDOWN", status: "PENDING",
     }));
     await assertFails(set(command(androidDb, "shutdown-old"), shutdown({ createdAt: Date.now() - 120_000 })));
     await assertFails(set(command(androidDb, "shutdown-future"), shutdown({ createdAt: Date.now() + 3_600_000 })));
@@ -286,7 +383,7 @@ try {
 
     // Other actions must still reject POWERING_OFF as their result.
     await assertSucceeds(set(command(androidDb, "scan-not-poweroff"), {
-      action: "SCAN", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+      action: "SCAN", status: "PENDING",
     }));
     await assertSucceeds(update(command(piDb, "scan-not-poweroff"), {
       status: "PROCESSING", processingAt: Date.now(),
@@ -295,13 +392,13 @@ try {
   });
   await check("SCAN carries no text and completes with SCANNED", async () => {
     await assertSucceeds(set(command(androidDb, "scan-ok"), {
-      action: "SCAN", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+      action: "SCAN", status: "PENDING",
     }));
     await assertFails(set(command(androidDb, "scan-text"), {
-      action: "SCAN", senderUid: ANDROID, targetUid: PI, status: "PENDING", text: "hi",
+      action: "SCAN", status: "PENDING", text: "hi",
     }));
     await assertFails(set(command(androidDb, "scan-success"), {
-      action: "SCAN", senderUid: ANDROID, targetUid: PI, status: "SUCCESS", result: "SCANNED",
+      action: "SCAN", status: "SUCCESS", result: "SCANNED",
     }));
 
     await assertSucceeds(update(command(piDb, "scan-ok"), {
@@ -317,7 +414,7 @@ try {
 
     // Other actions must still reject SCANNED as their result.
     await assertSucceeds(set(command(androidDb, "ping-not-scanned"), {
-      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+      action: "PING", status: "PENDING",
     }));
     await assertSucceeds(update(command(piDb, "ping-not-scanned"), {
       status: "PROCESSING", processingAt: Date.now(),
@@ -326,22 +423,22 @@ try {
   });
   await check("POWER_MODE carries a mode (PERFORMANCE/POWERSAVE), no text, and completes with MODE_SET", async () => {
     await assertSucceeds(set(command(androidDb, "mode-save"), {
-      action: "POWER_MODE", senderUid: ANDROID, targetUid: PI, status: "PENDING", mode: "POWERSAVE",
+      action: "POWER_MODE", status: "PENDING", mode: "POWERSAVE",
     }));
     await assertSucceeds(set(command(androidDb, "mode-perf"), {
-      action: "POWER_MODE", senderUid: ANDROID, targetUid: PI, status: "PENDING", mode: "PERFORMANCE",
+      action: "POWER_MODE", status: "PENDING", mode: "PERFORMANCE",
     }));
     await assertFails(set(command(androidDb, "mode-no-mode"), {
-      action: "POWER_MODE", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+      action: "POWER_MODE", status: "PENDING",
     }));
     await assertFails(set(command(androidDb, "mode-bad-value"), {
-      action: "POWER_MODE", senderUid: ANDROID, targetUid: PI, status: "PENDING", mode: "TURBO",
+      action: "POWER_MODE", status: "PENDING", mode: "TURBO",
     }));
     await assertFails(set(command(androidDb, "mode-text"), {
-      action: "POWER_MODE", senderUid: ANDROID, targetUid: PI, status: "PENDING", mode: "POWERSAVE", text: "hi",
+      action: "POWER_MODE", status: "PENDING", mode: "POWERSAVE", text: "hi",
     }));
     await assertFails(set(command(androidDb, "ping-with-mode"), {
-      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING", mode: "POWERSAVE",
+      action: "PING", status: "PENDING", mode: "POWERSAVE",
     }));
 
     await assertSucceeds(update(command(piDb, "mode-save"), {
@@ -358,7 +455,7 @@ try {
 
     // Other actions must still reject MODE_SET as their result.
     await assertSucceeds(set(command(androidDb, "ping-not-mode-set"), {
-      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+      action: "PING", status: "PENDING",
     }));
     await assertSucceeds(update(command(piDb, "ping-not-mode-set"), {
       status: "PROCESSING", processingAt: Date.now(),
@@ -366,13 +463,13 @@ try {
     await assertFails(update(command(piDb, "ping-not-mode-set"), { status: "SUCCESS", result: "MODE_SET", processingAt: null }));
   });
   await check("SPEAK may carry language tr/en (only SPEAK), and the agent can't change it", async () => {
-    const speak = (over) => ({ action: "SPEAK", senderUid: ANDROID, targetUid: PI, status: "PENDING", text: "hi", ...over });
+    const speak = (over) => ({ action: "SPEAK", status: "PENDING", text: "hi", ...over });
     await assertSucceeds(set(command(androidDb, "sp-none"), speak({})));
     await assertSucceeds(set(command(androidDb, "sp-tr"), speak({ language: "tr" })));
     await assertSucceeds(set(command(androidDb, "sp-en"), speak({ language: "en" })));
     await assertFails(set(command(androidDb, "sp-de"), speak({ language: "de" })));
     await assertFails(set(command(androidDb, "ping-lang"), {
-      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING", language: "en",
+      action: "PING", status: "PENDING", language: "en",
     }));
     await assertFails(update(command(piDb, "sp-en"), { status: "PROCESSING", processingAt: Date.now(), language: "tr" }));
     await assertSucceeds(update(command(piDb, "sp-en"), { status: "PROCESSING", processingAt: Date.now() }));
@@ -380,30 +477,26 @@ try {
     const done = await assertSucceeds(get(command(androidDb, "sp-en")));
     assert.equal(done.val().language, "en");
   });
-  await check("Android lists its own latest commands (sender query, at most 20); nobody else can", async () => {
-    await assertSucceeds(set(command(androidDb, "zz-recent-1"), {
-      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING",
-    }));
-    const mine = (db, limit) => query(ref(db, "commands"), orderByChild("senderUid"), equalTo(ANDROID), limitToLast(limit));
+  await check("The user lists the device's latest commands, at most 20 at a time", async () => {
+    await assertSucceeds(set(command(androidDb, "zz-recent-1"), { action: "PING", status: "PENDING" }));
+    const latest = (db, limit) => query(ref(db, `${DEV}/commands`), limitToLast(limit));
     // Keys sort by name here (the app's push IDs sort by time), so this one is the newest.
-    const listed = await assertSucceeds(get(mine(androidDb, 5)));
+    const listed = await assertSucceeds(get(latest(androidDb, 5)));
     assert.ok(listed.child("zz-recent-1").exists());
-    await assertSucceeds(get(mine(androidDb, 20)));
-    await assertFails(get(mine(androidDb, 50)));
-    await assertFails(get(query(ref(androidDb, "commands"), orderByChild("senderUid"), equalTo(ANDROID))));
-    await assertFails(get(ref(androidDb, "commands")));
-    await assertFails(get(query(ref(androidDb, "commands"), orderByChild("targetUid"), equalTo(PI), limitToLast(5))));
-    await assertFails(get(mine(testEnv.authenticatedContext(OTHER).database(), 5)));
+    await assertSucceeds(get(latest(androidDb, 20)));
+    await assertFails(get(latest(androidDb, 50)));
+    await assertFails(get(ref(androidDb, `${DEV}/commands`)));
+    await assertFails(get(latest(otherDb, 5)));
   });
   await check("SYSTEM_INFO has no extra fields and completes with REPORTED", async () => {
     await assertSucceeds(set(command(androidDb, "info-ok"), {
-      action: "SYSTEM_INFO", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+      action: "SYSTEM_INFO", status: "PENDING",
     }));
     await assertFails(set(command(androidDb, "info-text"), {
-      action: "SYSTEM_INFO", senderUid: ANDROID, targetUid: PI, status: "PENDING", text: "hi",
+      action: "SYSTEM_INFO", status: "PENDING", text: "hi",
     }));
     await assertFails(set(command(androidDb, "info-mode"), {
-      action: "SYSTEM_INFO", senderUid: ANDROID, targetUid: PI, status: "PENDING", mode: "POWERSAVE",
+      action: "SYSTEM_INFO", status: "PENDING", mode: "POWERSAVE",
     }));
     await assertSucceeds(update(command(piDb, "info-ok"), { status: "PROCESSING", processingAt: Date.now() }));
     await assertFails(update(command(piDb, "info-ok"), { status: "SUCCESS", result: "PONG", processingAt: null }));
@@ -411,31 +504,31 @@ try {
 
     // Other actions must still reject REPORTED as their result.
     await assertSucceeds(set(command(androidDb, "ping-not-reported"), {
-      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+      action: "PING", status: "PENDING",
     }));
     await assertSucceeds(update(command(piDb, "ping-not-reported"), { status: "PROCESSING", processingAt: Date.now() }));
     await assertFails(update(command(piDb, "ping-not-reported"), { status: "SUCCESS", result: "REPORTED", processingAt: null }));
   });
   await check("DOWNLOAD_ADD: magnet/URL/torrent-file sources, upload first, specific error codes", async () => {
-    const dl = (over) => ({ action: "DOWNLOAD_ADD", senderUid: ANDROID, targetUid: PI, status: "PENDING", ...over });
+    const dl = (over) => ({ action: "DOWNLOAD_ADD", status: "PENDING", ...over });
     await assertSucceeds(set(command(androidDb, "dl-magnet"), dl({ source: "MAGNET", url: "magnet:?xt=urn:btih:abc&dn=ubuntu" })));
     await assertSucceeds(set(command(androidDb, "dl-url"), dl({ source: "URL", url: "https://example.com/fedora.iso" })));
     await assertFails(set(command(androidDb, "dl-file-scheme"), dl({ source: "URL", url: "file:///etc/passwd" })));
     await assertFails(set(command(androidDb, "dl-magnet-not"), dl({ source: "MAGNET", url: "https://example.com/x" })));
     await assertFails(set(command(androidDb, "dl-no-source"), dl({ url: "https://example.com/x.iso" })));
     await assertFails(set(command(androidDb, "ping-with-url"), {
-      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING", source: "URL", url: "https://example.com/x",
+      action: "PING", status: "PENDING", source: "URL", url: "https://example.com/x",
     }));
 
     // A torrent file is uploaded first; only then may its command exist.
     await assertFails(set(command(androidDb, "dl-torrent"), dl({ source: "TORRENT_FILE" })));
-    await assertSucceeds(set(ref(androidDb, "uploads/dl-torrent"), { torrent: "ZDg6YW5ub3VuY2U=" }));
-    await assertFails(set(ref(androidDb, "uploads/dl-torrent"), { torrent: "ZQ==" }));
-    await assertFails(get(ref(androidDb, "uploads/dl-torrent")));
+    await assertSucceeds(set(ref(androidDb, `${DEV}/uploads/dl-torrent`), { torrent: "ZDg6YW5ub3VuY2U=" }));
+    await assertFails(set(ref(androidDb, `${DEV}/uploads/dl-torrent`), { torrent: "ZQ==" }));
+    await assertFails(get(ref(androidDb, `${DEV}/uploads/dl-torrent`)));
     await assertSucceeds(set(command(androidDb, "dl-torrent"), dl({ source: "TORRENT_FILE" })));
-    const upload = await assertSucceeds(get(ref(piDb, "uploads/dl-torrent")));
+    const upload = await assertSucceeds(get(ref(piDb, `${DEV}/uploads/dl-torrent`)));
     assert.equal(upload.val().torrent, "ZDg6YW5ub3VuY2U=");
-    await assertSucceeds(set(ref(piDb, "uploads/dl-torrent"), null));
+    await assertSucceeds(set(ref(piDb, `${DEV}/uploads/dl-torrent`), null));
 
     await assertSucceeds(update(command(piDb, "dl-magnet"), { status: "PROCESSING", processingAt: Date.now() }));
     await assertFails(update(command(piDb, "dl-magnet"), { url: "magnet:?xt=urn:btih:zzz" }));
@@ -448,7 +541,7 @@ try {
 
     // The download-only codes are not available to other actions.
     await assertSucceeds(set(command(androidDb, "ping-no-download-codes"), {
-      action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING",
+      action: "PING", status: "PENDING",
     }));
     await assertSucceeds(update(command(piDb, "ping-no-download-codes"), { status: "PROCESSING", processingAt: Date.now() }));
     await assertFails(update(command(piDb, "ping-no-download-codes"), { status: "FAILED", errorCode: "NO_SPACE", processingAt: null }));
@@ -464,22 +557,22 @@ try {
         },
       },
     };
-    await assertFails(set(ref(androidDb, "downloads/latest"), report));
-    await assertSucceeds(set(ref(piDb, "downloads/latest"), report));
-    await assertFails(set(ref(piDb, "downloads/latest/items/2089b05ecca3d829/path"), "/home"));
-    await assertSucceeds(get(ref(androidDb, "downloads/latest")));
-    await assertFails(get(ref(piDb, "downloads/latest")));
+    await assertFails(set(ref(androidDb, `${DEV}/downloads/latest`), report));
+    await assertSucceeds(set(ref(piDb, `${DEV}/downloads/latest`), report));
+    await assertFails(set(ref(piDb, `${DEV}/downloads/latest/items/2089b05ecca3d829/path`), "/home"));
+    await assertSucceeds(get(ref(androidDb, `${DEV}/downloads/latest`)));
+    await assertFails(get(ref(piDb, `${DEV}/downloads/latest`)));
 
-    await assertSucceeds(set(ref(androidDb, "settings/downloadLimitMbps"), 20));
-    await assertSucceeds(set(ref(androidDb, "settings/downloadLimitMbps"), 0));
-    await assertFails(set(ref(androidDb, "settings/downloadLimitMbps"), -1));
-    await assertFails(set(ref(androidDb, "settings/downloadLimitMbps"), 2.5));
-    await assertFails(set(ref(piDb, "settings/downloadLimitMbps"), 50));
-    await assertSucceeds(get(ref(piDb, "settings/downloadLimitMbps")));
+    await assertSucceeds(set(ref(androidDb, `${DEV}/settings/downloadLimitMbps`), 20));
+    await assertSucceeds(set(ref(androidDb, `${DEV}/settings/downloadLimitMbps`), 0));
+    await assertFails(set(ref(androidDb, `${DEV}/settings/downloadLimitMbps`), -1));
+    await assertFails(set(ref(androidDb, `${DEV}/settings/downloadLimitMbps`), 2.5));
+    await assertFails(set(ref(piDb, `${DEV}/settings/downloadLimitMbps`), 50));
+    await assertSucceeds(get(ref(piDb, `${DEV}/settings/downloadLimitMbps`)));
   });
 
   await check("TAILSCALE carries state UP/DOWN and SYSTEM_UPDATE nothing; their own results and errors", async () => {
-    const cmd = (action, over) => ({ action, senderUid: ANDROID, targetUid: PI, status: "PENDING", ...over });
+    const cmd = (action, over) => ({ action, status: "PENDING", ...over });
     await assertSucceeds(set(command(androidDb, "ts-up"), cmd("TAILSCALE", { state: "UP" })));
     await assertFails(set(command(androidDb, "ts-none"), cmd("TAILSCALE")));
     await assertFails(set(command(androidDb, "ts-on"), cmd("TAILSCALE", { state: "ON" })));
@@ -500,174 +593,156 @@ try {
     await assertSucceeds(update(command(piDb, "upd-busy"), { status: "FAILED", errorCode: "UPDATE_RUNNING", processingAt: null }));
   });
 
-  await check("FEDORA_TASKS has no fields, answers TASKS_STARTED/TASKS_RUNNING; Pi writes /tasks/latest", async () => {
-    const cmd = (over) => ({ action: "FEDORA_TASKS", senderUid: ANDROID, targetUid: PI, status: "PENDING", ...over });
-    await assertSucceeds(set(command(androidDb, "ft"), cmd()));
-    await assertFails(set(command(androidDb, "ft-text"), cmd({ text: "x" })));
-    await assertSucceeds(update(command(piDb, "ft"), { status: "PROCESSING", processingAt: Date.now() }));
-    await assertFails(update(command(piDb, "ft"), { status: "SUCCESS", result: "UPDATE_STARTED", processingAt: null }));
-    await assertSucceeds(update(command(piDb, "ft"), { status: "SUCCESS", result: "TASKS_STARTED", processingAt: null }));
-    await assertSucceeds(set(command(androidDb, "ft-busy"), cmd()));
-    await assertSucceeds(update(command(piDb, "ft-busy"), { status: "PROCESSING", processingAt: Date.now() }));
-    await assertSucceeds(update(command(piDb, "ft-busy"), { status: "FAILED", errorCode: "TASKS_RUNNING", processingAt: null }));
-
-    await assertSucceeds(set(ref(piDb, "tasks/latest"), { state: "RUNNING", tail: "running tests", startedAt: Date.now() }));
-    await assertSucceeds(set(ref(piDb, "tasks/latest"), { state: "DONE", exitCode: 0, report: "- update.sh: OK" }));
-    await assertFails(set(ref(piDb, "tasks/latest"), { state: "DONE", log: "x" }));
-    await assertFails(set(ref(androidDb, "tasks/latest"), { state: "DONE" }));
-    await assertSucceeds(get(ref(androidDb, "tasks/latest")));
-  });
-
   await check("Power save sleep cycle: Pi writes /power/cycle, Android sets the interval, SLEEP_CYCLE_ACTIVE", async () => {
-    await assertSucceeds(set(ref(piDb, "power/cycle"), { state: "AWAKE", intervalMinutes: 20, updatedAt: Date.now() }));
-    await assertSucceeds(set(ref(piDb, "power/cycle"), { state: "AWAKE", intervalMinutes: 20, hold: "SESSION", updatedAt: Date.now() }));
-    await assertSucceeds(set(ref(piDb, "power/cycle"), {
+    await assertSucceeds(set(ref(piDb, `${DEV}/power/cycle`), { state: "AWAKE", intervalMinutes: 20, updatedAt: Date.now() }));
+    await assertSucceeds(set(ref(piDb, `${DEV}/power/cycle`), { state: "AWAKE", intervalMinutes: 20, hold: "SESSION", updatedAt: Date.now() }));
+    await assertSucceeds(set(ref(piDb, `${DEV}/power/cycle`), {
       state: "SLEEPING", intervalMinutes: 30, nextWakeAt: Date.now() + 1_800_000, updatedAt: Date.now(),
     }));
-    await assertSucceeds(set(ref(piDb, "power/cycle"), { state: "OFF", intervalMinutes: 20, updatedAt: Date.now() }));
-    await assertFails(set(ref(piDb, "power/cycle"), { state: "AWAKE", intervalMinutes: 15, updatedAt: Date.now() }));
-    await assertFails(set(ref(piDb, "power/cycle"), { state: "DOZING", intervalMinutes: 20, updatedAt: Date.now() }));
-    await assertFails(set(ref(piDb, "power/cycle"), { state: "AWAKE", intervalMinutes: 20, nextWakeAt: Date.now(), updatedAt: Date.now() }));
-    await assertFails(set(ref(piDb, "power/cycle"), { state: "SLEEPING", intervalMinutes: 20, hold: "SESSION", updatedAt: Date.now() }));
-    await assertFails(set(ref(piDb, "power/cycle"), { state: "AWAKE", intervalMinutes: 20, hold: "BORED", updatedAt: Date.now() }));
-    await assertSucceeds(set(ref(piDb, "power/cycle"), {
+    await assertSucceeds(set(ref(piDb, `${DEV}/power/cycle`), { state: "OFF", intervalMinutes: 20, updatedAt: Date.now() }));
+    await assertFails(set(ref(piDb, `${DEV}/power/cycle`), { state: "AWAKE", intervalMinutes: 15, updatedAt: Date.now() }));
+    await assertFails(set(ref(piDb, `${DEV}/power/cycle`), { state: "DOZING", intervalMinutes: 20, updatedAt: Date.now() }));
+    await assertFails(set(ref(piDb, `${DEV}/power/cycle`), { state: "AWAKE", intervalMinutes: 20, nextWakeAt: Date.now(), updatedAt: Date.now() }));
+    await assertFails(set(ref(piDb, `${DEV}/power/cycle`), { state: "SLEEPING", intervalMinutes: 20, hold: "SESSION", updatedAt: Date.now() }));
+    await assertFails(set(ref(piDb, `${DEV}/power/cycle`), { state: "AWAKE", intervalMinutes: 20, hold: "BORED", updatedAt: Date.now() }));
+    await assertSucceeds(set(ref(piDb, `${DEV}/power/cycle`), {
       state: "AWAKE", intervalMinutes: 10, hold: "SESSION", detail: "session 4: ferhat via sshd on pts/0", updatedAt: Date.now(),
     }));
-    await assertFails(set(ref(piDb, "power/cycle"), { state: "AWAKE", intervalMinutes: 10, detail: "no hold", updatedAt: Date.now() }));
-    await assertFails(set(ref(piDb, "power/cycle"), {
+    await assertFails(set(ref(piDb, `${DEV}/power/cycle`), { state: "AWAKE", intervalMinutes: 10, detail: "no hold", updatedAt: Date.now() }));
+    await assertFails(set(ref(piDb, `${DEV}/power/cycle`), {
       state: "AWAKE", intervalMinutes: 10, hold: "SESSION", detail: "x".repeat(161), updatedAt: Date.now(),
     }));
-    await assertFails(set(ref(piDb, "power/cycle"), { state: "AWAKE", intervalMinutes: 20, updatedAt: Date.now(), extra: 1 }));
-    await assertFails(set(ref(piDb, "power/cycle"), { state: "AWAKE", intervalMinutes: 20 }));
-    await assertFails(set(ref(androidDb, "power/cycle"), { state: "OFF", intervalMinutes: 20, updatedAt: Date.now() }));
-    await assertSucceeds(get(ref(androidDb, "power/cycle")));
+    await assertFails(set(ref(piDb, `${DEV}/power/cycle`), { state: "AWAKE", intervalMinutes: 20, updatedAt: Date.now(), extra: 1 }));
+    await assertFails(set(ref(piDb, `${DEV}/power/cycle`), { state: "AWAKE", intervalMinutes: 20 }));
+    await assertFails(set(ref(androidDb, `${DEV}/power/cycle`), { state: "OFF", intervalMinutes: 20, updatedAt: Date.now() }));
+    await assertSucceeds(get(ref(androidDb, `${DEV}/power/cycle`)));
 
     for (const minutes of [10, 20, 30, 60]) {
-      await assertSucceeds(set(ref(androidDb, "settings/sleepIntervalMinutes"), minutes));
+      await assertSucceeds(set(ref(androidDb, `${DEV}/settings/sleepIntervalMinutes`), minutes));
     }
-    await assertFails(set(ref(androidDb, "settings/sleepIntervalMinutes"), 15));
-    await assertFails(set(ref(androidDb, "settings/sleepIntervalMinutes"), "20"));
-    await assertFails(set(ref(piDb, "settings/sleepIntervalMinutes"), 20));
-    await assertSucceeds(get(ref(piDb, "settings/sleepIntervalMinutes")));
+    await assertFails(set(ref(androidDb, `${DEV}/settings/sleepIntervalMinutes`), 15));
+    await assertFails(set(ref(androidDb, `${DEV}/settings/sleepIntervalMinutes`), "20"));
+    await assertFails(set(ref(piDb, `${DEV}/settings/sleepIntervalMinutes`), 20));
+    await assertSucceeds(get(ref(piDb, `${DEV}/settings/sleepIntervalMinutes`)));
 
-    const sleep = { action: "SLEEP", senderUid: ANDROID, targetUid: PI, status: "PENDING", createdAt: serverTimestamp() };
+    const sleep = { action: "SLEEP", status: "PENDING", createdAt: serverTimestamp() };
     await assertSucceeds(set(command(androidDb, "sleep-cycle"), sleep));
     await assertSucceeds(update(command(piDb, "sleep-cycle"), { status: "PROCESSING", processingAt: Date.now() }));
     await assertSucceeds(update(command(piDb, "sleep-cycle"), { status: "FAILED", errorCode: "SLEEP_CYCLE_ACTIVE", processingAt: null }));
-    await assertSucceeds(set(command(androidDb, "ping-cycle"), { action: "PING", senderUid: ANDROID, targetUid: PI, status: "PENDING" }));
+    await assertSucceeds(set(command(androidDb, "ping-cycle"), { action: "PING", status: "PENDING" }));
     await assertSucceeds(update(command(piDb, "ping-cycle"), { status: "PROCESSING", processingAt: Date.now() }));
     await assertFails(update(command(piDb, "ping-cycle"), { status: "FAILED", errorCode: "SLEEP_CYCLE_ACTIVE", processingAt: null }));
   });
 
   await check("Pi keeps /power/history and /system/update; Android reads both", async () => {
     const key = String(Date.now());
-    await assertSucceeds(set(ref(piDb, `power/history/${key}`), { cpu: 12.5, w: 7.1 }));
-    await assertFails(set(ref(piDb, "power/history/abc"), { cpu: 1 }));
-    await assertFails(set(ref(piDb, `power/history/${key}`), { cpu: 1, tempC: 40 }));
-    await assertFails(set(ref(androidDb, `power/history/${key}`), { cpu: 1 }));
-    await assertSucceeds(get(ref(androidDb, "power/history")));
-    await assertSucceeds(set(ref(piDb, `power/history/${key}`), null));
+    await assertSucceeds(set(ref(piDb, `${DEV}/power/history/${key}`), { cpu: 12.5, w: 7.1 }));
+    await assertFails(set(ref(piDb, `${DEV}/power/history/abc`), { cpu: 1 }));
+    await assertFails(set(ref(piDb, `${DEV}/power/history/${key}`), { cpu: 1, tempC: 40 }));
+    await assertFails(set(ref(androidDb, `${DEV}/power/history/${key}`), { cpu: 1 }));
+    await assertSucceeds(get(ref(androidDb, `${DEV}/power/history`)));
+    await assertSucceeds(set(ref(piDb, `${DEV}/power/history/${key}`), null));
 
-    await assertSucceeds(set(ref(piDb, "system/update"), {
+    await assertSucceeds(set(ref(piDb, `${DEV}/system/update`), {
       state: "RUNNING", phase: "INSTALLING", percent: 60, done: 3, total: 6, packages: 3, startedAt: Date.now(),
     }));
-    await assertFails(set(ref(piDb, "system/update"), { state: "RUNNING", phase: "X", percent: 1 }));
-    await assertFails(set(ref(androidDb, "system/update"), { state: "RUNNING", phase: "INSTALLING", percent: 1 }));
-    await assertSucceeds(get(ref(androidDb, "system/update")));
+    await assertFails(set(ref(piDb, `${DEV}/system/update`), { state: "RUNNING", phase: "X", percent: 1 }));
+    await assertFails(set(ref(androidDb, `${DEV}/system/update`), { state: "RUNNING", phase: "INSTALLING", percent: 1 }));
+    await assertSucceeds(get(ref(androidDb, `${DEV}/system/update`)));
 
-    await assertSucceeds(set(ref(piDb, "power/latest"), { reportedAt: Date.now(), tailscale: "RUNNING" }));
-    await assertFails(set(ref(piDb, "power/latest"), { reportedAt: Date.now(), tailscale: "ON" }));
+    await assertSucceeds(set(ref(piDb, `${DEV}/power/latest`), { reportedAt: Date.now(), tailscale: "RUNNING" }));
+    await assertFails(set(ref(piDb, `${DEV}/power/latest`), { reportedAt: Date.now(), tailscale: "ON" }));
   });
 
   await check("Only the Pi writes /network/latest, and only Android reads it, with required shape", async () => {
-    await assertFails(get(ref(anonymousDb, "network/latest")));
-    await assertFails(set(ref(piDb, "network/latest"), {
+    await assertFails(get(ref(anonymousDb, `${DEV}/network/latest`)));
+    await assertFails(set(ref(piDb, `${DEV}/network/latest`), {
       scannedAt: Date.now(),
     }));
-    await assertFails(set(ref(piDb, "network/latest"), {
+    await assertFails(set(ref(piDb, `${DEV}/network/latest`), {
       scannedAt: Date.now(),
       devices: { "AA-BB-CC-DD-EE-FF": { ip: "192.168.1.10" } },
     }));
-    await assertFails(set(ref(piDb, "network/latest"), {
+    await assertFails(set(ref(piDb, `${DEV}/network/latest`), {
       scannedAt: Date.now(),
       devices: { "not-a-mac": { ip: "192.168.1.10", name: "Phone" } },
     }));
-    await assertFails(set(ref(piDb, "network/latest"), {
+    await assertFails(set(ref(piDb, `${DEV}/network/latest`), {
       scannedAt: Date.now(),
       devices: { "AA-BB-CC-DD-EE-FF": { ip: "192.168.1.10", name: "Phone", note: "x" } },
     }));
-    await assertFails(set(ref(androidDb, "network/latest"), {
+    await assertFails(set(ref(androidDb, `${DEV}/network/latest`), {
       scannedAt: Date.now(),
       devices: {},
     }));
 
-    await assertSucceeds(set(ref(piDb, "network/latest"), {
+    await assertSucceeds(set(ref(piDb, `${DEV}/network/latest`), {
       scannedAt: Date.now(),
       devices: {
         "AA-BB-CC-DD-EE-FF": { ip: "192.168.1.10", name: "Fedora" },
         "11-22-33-44-55-66": { ip: "192.168.1.20", name: "Unknown" },
       },
     }));
-    const latest = await assertSucceeds(get(ref(androidDb, "network/latest")));
+    const latest = await assertSucceeds(get(ref(androidDb, `${DEV}/network/latest`)));
     assert.equal(latest.child("devices/AA-BB-CC-DD-EE-FF/name").val(), "Fedora");
-    await assertFails(get(ref(piDb, "network/latest")));
+    await assertFails(get(ref(piDb, `${DEV}/network/latest`)));
   });
   await check("Only the Pi writes /power/latest, and only Android reads it, with required shape", async () => {
-    await assertFails(get(ref(anonymousDb, "power/latest")));
+    await assertFails(get(ref(anonymousDb, `${DEV}/power/latest`)));
     // cpu is optional now - a reportedAt-only write is a valid (if useless) shape.
-    await assertSucceeds(set(ref(piDb, "power/latest"), {
+    await assertSucceeds(set(ref(piDb, `${DEV}/power/latest`), {
       reportedAt: Date.now(),
     }));
-    await assertFails(set(ref(piDb, "power/latest"), {
+    await assertFails(set(ref(piDb, `${DEV}/power/latest`), {
       cpu: { usagePercent: 12.3 },
     }));
-    await assertFails(set(ref(piDb, "power/latest"), {
+    await assertFails(set(ref(piDb, `${DEV}/power/latest`), {
       reportedAt: Date.now(),
       cpu: { usagePercent: 150 },
     }));
-    await assertFails(set(ref(piDb, "power/latest"), {
+    await assertFails(set(ref(piDb, `${DEV}/power/latest`), {
       reportedAt: Date.now(),
       cpu: { tempC: 55, coreFreqMhz: { "cpu0": 1800 }, note: "x" },
     }));
-    await assertFails(set(ref(piDb, "power/latest"), {
+    await assertFails(set(ref(piDb, `${DEV}/power/latest`), {
       reportedAt: Date.now(),
       cpu: { coreFreqMhz: { "notacore": 1800 } },
     }));
-    await assertFails(set(ref(piDb, "power/latest"), {
+    await assertFails(set(ref(piDb, `${DEV}/power/latest`), {
       reportedAt: Date.now(),
       cpu: { usagePercent: 12.3 },
       battery: { percent: 150 },
     }));
-    await assertFails(set(ref(piDb, "power/latest"), {
+    await assertFails(set(ref(piDb, `${DEV}/power/latest`), {
       reportedAt: Date.now(),
       cpu: { packageWatts: -1 },
     }));
-    await assertFails(set(ref(piDb, "power/latest"), {
+    await assertFails(set(ref(piDb, `${DEV}/power/latest`), {
       reportedAt: Date.now(),
       cpu: { coreWatts: 4.1 }, // dropped feature: no sudoers rule, Rules no longer accept it
     }));
-    await assertFails(set(ref(piDb, "power/latest"), {
+    await assertFails(set(ref(piDb, `${DEV}/power/latest`), {
       reportedAt: Date.now(),
       system: { fanRpm: 2400, ecTempC: 42, note: "x" },
     }));
-    await assertFails(set(ref(piDb, "power/latest"), {
+    await assertFails(set(ref(piDb, `${DEV}/power/latest`), {
       reportedAt: Date.now(),
       system: { fanRpm: -5 },
     }));
-    await assertSucceeds(set(ref(piDb, "power/latest"), {
+    await assertSucceeds(set(ref(piDb, `${DEV}/power/latest`), {
       reportedAt: Date.now(),
       powerMode: "POWERSAVE",
     }));
-    await assertFails(set(ref(piDb, "power/latest"), {
+    await assertFails(set(ref(piDb, `${DEV}/power/latest`), {
       reportedAt: Date.now(),
       powerMode: "TURBO",
     }));
-    await assertFails(set(ref(androidDb, "power/latest"), {
+    await assertFails(set(ref(androidDb, `${DEV}/power/latest`), {
       reportedAt: Date.now(),
       cpu: { usagePercent: 12.3 },
     }));
 
-    await assertSucceeds(set(ref(piDb, "power/latest"), {
+    await assertSucceeds(set(ref(piDb, `${DEV}/power/latest`), {
       reportedAt: Date.now(),
       cpu: {
         tempC: 55,
@@ -678,18 +753,48 @@ try {
       battery: { percent: 87 },
       system: { fanRpm: 2400, ecTempC: 42 },
     }));
-    await assertSucceeds(set(ref(piDb, "power/latest"), {
+    await assertSucceeds(set(ref(piDb, `${DEV}/power/latest`), {
       reportedAt: Date.now(),
       cpu: { usagePercent: 5 },
     }));
     // cpu is optional now: a snapshot with only system/battery data is still valid shape.
-    await assertSucceeds(set(ref(piDb, "power/latest"), {
+    await assertSucceeds(set(ref(piDb, `${DEV}/power/latest`), {
       reportedAt: Date.now(),
       system: { fanRpm: 2200 },
     }));
-    const latest = await assertSucceeds(get(ref(androidDb, "power/latest")));
+    const latest = await assertSucceeds(get(ref(androidDb, `${DEV}/power/latest`)));
     assert.equal(latest.child("system/fanRpm").val(), 2200);
-    await assertFails(get(ref(piDb, "power/latest")));
+    await assertFails(get(ref(piDb, `${DEV}/power/latest`)));
+  });
+
+  await check("Unpairing removes the device and frees the agent; the agent can also reset itself", async () => {
+    // Not by strangers.
+    await assertFails(set(ref(otherDb, `agents/${PI}`), null));
+    await assertFails(set(ref(otherAgentDb, `agents/${PI}`), null));
+    await assertFails(set(ref(otherDb, DEV), null));
+    await assertFails(set(ref(piDb, DEV), null));
+    await assertSucceeds(update(ref(androidDb), { [`agents/${PI}`]: null, [DEV]: null }));
+    // The agent is locked out at once, and can be paired again with a new code.
+    await assertFails(get(ref(piDb, `${DEV}/commands`)));
+    await assertFails(set(ref(piDb, `${DEV}/power/latest`), { reportedAt: serverTimestamp() }));
+    await assertSucceeds(set(ref(piDb, `pairing/${PI}`), { code: "HJKM2345", name: "Mac", platform: "macos", createdAt: serverTimestamp() }));
+    await assertSucceeds(update(ref(otherDb), {
+      [`agents/${PI}`]: { owner: OTHER, code: "HJKM2345", pairedAt: serverTimestamp() },
+      [`users/${OTHER}/devices/${PI}/info`]: { name: "Mac", platform: "macos", pairedAt: serverTimestamp() },
+      [`pairing/${PI}`]: null,
+    }));
+    await assertSucceeds(set(ref(piDb, `users/${OTHER}/devices/${PI}/power/latest`), { reportedAt: serverTimestamp() }));
+    await assertFails(set(ref(androidDb, `agents/${PI}`), null));
+    await assertSucceeds(set(ref(piDb, `agents/${PI}`), null));
+    await assertFails(set(ref(piDb, `users/${OTHER}/devices/${PI}/power/latest`), { reportedAt: serverTimestamp() }));
+  });
+
+  await check("Deleting an account's data: only its owner, in one go", async () => {
+    await assertFails(set(ref(androidDb, `users/${OTHER}`), null));
+    await assertFails(set(ref(otherAgentDb, `users/${OTHER}`), null));
+    await assertFails(set(ref(otherDb, `users/${OTHER}/notes`), "x"));
+    await assertSucceeds(set(ref(otherDb, `users/${OTHER}`), null));
+    assert.equal((await assertSucceeds(get(ref(otherDb, `users/${OTHER}`)))).exists(), false);
   });
 } finally {
   await testEnv.cleanup();
