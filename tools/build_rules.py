@@ -139,8 +139,9 @@ def command_rules():
         % (any_of("newData.val()", ("NOT_A_FILE", "NO_SPACE", "BAD_INPUT", "ENGINE_DOWN")), pa, pa, pa, pa, pa, pa, pa)
     )
     return {
-        # The phone lists its latest commands; the agent reads them all (it prunes finished ones).
-        ".read": "(" + USER_DEV + " && query.limitToLast <= 20) || " + AGENT,
+        # The user reads everything under /users/{uid} anyway (it is all theirs); the agent
+        # reads all of its commands, and prunes finished ones to keep the list short.
+        ".read": AGENT,
         "$commandId": {
             ".read": EITHER,
             ".write": "(" + create + ") || (" + advance + ") || (" + remove + ")",

@@ -50,7 +50,7 @@ loses access at once and can publish a new code. The agent can also delete `/age
 | Node | User (owner) | Agent (paired) |
 |---|---|---|
 | info | read, write | read, write |
-| commands | create PENDING, read latest 20, delete | read all, advance status, delete finished |
+| commands | create PENDING, read, delete | read all, advance status, delete finished |
 | uploads | create, delete | read, delete |
 | settings | read, write | read |
 | power, downloads, network, system | read | write (history: also read) |

@@ -477,16 +477,15 @@ try {
     const done = await assertSucceeds(get(command(androidDb, "sp-en")));
     assert.equal(done.val().language, "en");
   });
-  await check("The user lists the device's latest commands, at most 20 at a time", async () => {
+  await check("The user reads the device's commands (latest 20 in the app); other users cannot", async () => {
     await assertSucceeds(set(command(androidDb, "zz-recent-1"), { action: "PING", status: "PENDING" }));
     const latest = (db, limit) => query(ref(db, `${DEV}/commands`), limitToLast(limit));
     // Keys sort by name here (the app's push IDs sort by time), so this one is the newest.
-    const listed = await assertSucceeds(get(latest(androidDb, 5)));
+    const listed = await assertSucceeds(get(latest(androidDb, 20)));
     assert.ok(listed.child("zz-recent-1").exists());
-    await assertSucceeds(get(latest(androidDb, 20)));
-    await assertFails(get(latest(androidDb, 50)));
-    await assertFails(get(ref(androidDb, `${DEV}/commands`)));
+    await assertSucceeds(get(ref(androidDb, `${DEV}/commands`)));
     await assertFails(get(latest(otherDb, 5)));
+    await assertFails(get(latest(otherAgentDb, 5)));
   });
   await check("SYSTEM_INFO has no extra fields and completes with REPORTED", async () => {
     await assertSucceeds(set(command(androidDb, "info-ok"), {
@@ -524,7 +523,7 @@ try {
     await assertFails(set(command(androidDb, "dl-torrent"), dl({ source: "TORRENT_FILE" })));
     await assertSucceeds(set(ref(androidDb, `${DEV}/uploads/dl-torrent`), { torrent: "ZDg6YW5ub3VuY2U=" }));
     await assertFails(set(ref(androidDb, `${DEV}/uploads/dl-torrent`), { torrent: "ZQ==" }));
-    await assertFails(get(ref(androidDb, `${DEV}/uploads/dl-torrent`)));
+    await assertFails(get(ref(otherDb, `${DEV}/uploads/dl-torrent`)));
     await assertSucceeds(set(command(androidDb, "dl-torrent"), dl({ source: "TORRENT_FILE" })));
     const upload = await assertSucceeds(get(ref(piDb, `${DEV}/uploads/dl-torrent`)));
     assert.equal(upload.val().torrent, "ZDg6YW5ub3VuY2U=");
