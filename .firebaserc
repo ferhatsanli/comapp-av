@@ -1,5 +1,7 @@
 {
   "projects": {
     "default": "comapp-av"
-  }
+  },
+  "targets": {},
+  "etags": {}
 }
