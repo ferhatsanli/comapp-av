@@ -116,6 +116,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -394,7 +395,7 @@ private fun ComAppScreen(auth: FirebaseAuth, database: FirebaseDatabase) {
 internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDatabase, onDeviceMenu: () -> Unit) {
     // Everything about this computer lives under one node (docs/data-model.md).
     val dataPath = Devices.dataPath(user.uid, device.id)
-    fun dataRef(path: String) = dataRef("$dataPath/$path")
+    fun dataRef(path: String): DatabaseReference = database.getReference("$dataPath/$path")
 
     var connected by remember { mutableStateOf<Boolean?>(null) }
     var commandId by remember { mutableStateOf<String?>(null) }
