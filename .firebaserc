@@ -1,5 +1,7 @@
 {
   "projects": {
     "default": "comapp-prod-38cb2"
-  }
+  },
+  "targets": {},
+  "etags": {}
 }
