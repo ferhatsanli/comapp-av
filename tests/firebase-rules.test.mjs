@@ -23,7 +23,9 @@ const ANDROID = "user-android";
 const PI = "agent-pi";
 const OTHER = "other-user";
 const OTHER_AGENT = "other-agent";
-const DEV = `users/${ANDROID}/devices/${PI}`;
+// The computer's entry in the user's list, and the tree with everything else about it.
+const INFO = `users/${ANDROID}/devices/${PI}`;
+const DEV = `users/${ANDROID}/data/${PI}`;
 const GOOGLE = { firebase: { sign_in_provider: "google.com" } };
 const ANON = { firebase: { sign_in_provider: "anonymous" } };
 const rules = await readFile(new URL("../database.rules.json", import.meta.url), "utf8");
@@ -94,14 +96,14 @@ try {
 
     const claim = (uid, code) => ({
       [`agents/${PI}`]: { owner: uid, code, pairedAt: serverTimestamp() },
-      [`users/${uid}/devices/${PI}/info`]: { name: "MacBook Pro", platform: "macos", pairedAt: serverTimestamp() },
+      [`users/${uid}/devices/${PI}`]: { name: "MacBook Pro", platform: "macos", pairedAt: serverTimestamp() },
       [`pairing/${PI}`]: null,
     });
     // Wrong code, someone else as owner, an anonymous account, or the info without the claim: no.
     await assertFails(update(ref(androidDb), claim(ANDROID, "ZZZZ9999")));
     await assertFails(update(ref(androidDb), claim(OTHER, CODE)));
     await assertFails(update(ref(otherAgentDb), claim(OTHER_AGENT, CODE)));
-    await assertFails(set(ref(androidDb, `${DEV}/info`), { name: "x", platform: "macos", pairedAt: serverTimestamp() }));
+    await assertFails(set(ref(androidDb, `${INFO}`), { name: "x", platform: "macos", pairedAt: serverTimestamp() }));
     await assertFails(set(ref(androidDb, `pairing/${PI}`), null));
     await assertSucceeds(update(ref(androidDb), claim(ANDROID, CODE)));
 
@@ -120,25 +122,25 @@ try {
     await seed(`pairing/${OTHER_AGENT}`, { code: "WXYZ6789", name: "old", platform: "linux", createdAt: Date.now() - 11 * 60_000 });
     await assertFails(update(ref(otherDb), {
       [`agents/${OTHER_AGENT}`]: { owner: OTHER, code: "WXYZ6789", pairedAt: serverTimestamp() },
-      [`users/${OTHER}/devices/${OTHER_AGENT}/info`]: { name: "old", platform: "linux", pairedAt: serverTimestamp() },
+      [`users/${OTHER}/devices/${OTHER_AGENT}`]: { name: "old", platform: "linux", pairedAt: serverTimestamp() },
     }));
     await seed(`pairing/${OTHER_AGENT}`, null);
   });
 
   await check("Device info: the user renames, the agent reports its facts, in a fixed shape", async () => {
-    await assertSucceeds(set(ref(androidDb, `${DEV}/info/name`), "Living room Mac"));
-    await assertFails(set(ref(androidDb, `${DEV}/info/name`), ""));
-    await assertFails(set(ref(androidDb, `${DEV}/info/name`), "x".repeat(41)));
-    await assertSucceeds(update(ref(piDb, `${DEV}/info`), {
+    await assertSucceeds(set(ref(androidDb, `${INFO}/name`), "Living room Mac"));
+    await assertFails(set(ref(androidDb, `${INFO}/name`), ""));
+    await assertFails(set(ref(androidDb, `${INFO}/name`), "x".repeat(41)));
+    await assertSucceeds(update(ref(piDb, `${INFO}`), {
       hostname: "ferhats-mbp", osVersion: "macOS 15.1", agentVersion: "2.0.0",
       capabilities: { speak: true, sleepCycle: true, systemUpdate: false },
     }));
-    await assertFails(set(ref(piDb, `${DEV}/info/agentVersion`), "latest"));
-    await assertFails(set(ref(piDb, `${DEV}/info/capabilities/speak`), "yes"));
-    await assertFails(set(ref(piDb, `${DEV}/info/secret`), "x"));
-    await assertFails(set(ref(piDb, `${DEV}/info/platform`), "beos"));
+    await assertFails(set(ref(piDb, `${INFO}/agentVersion`), "latest"));
+    await assertFails(set(ref(piDb, `${INFO}/capabilities/speak`), "yes"));
+    await assertFails(set(ref(piDb, `${INFO}/secret`), "x"));
+    await assertFails(set(ref(piDb, `${INFO}/platform`), "beos"));
     await assertSucceeds(get(ref(androidDb, `users/${ANDROID}/devices`)));
-    await assertSucceeds(get(ref(piDb, `${DEV}/info`)));
+    await assertSucceeds(get(ref(piDb, `${INFO}`)));
   });
 
   await check("The user creates a PENDING PING and reads its own outcome", async () => {
@@ -164,23 +166,24 @@ try {
     // Another user, another user's agent, and an anonymous account posing as a user.
     await assertFails(get(command(otherDb, "android-owned")));
     await assertFails(get(ref(otherDb, `users/${ANDROID}`)));
-    await assertFails(get(ref(otherDb, `${DEV}/info`)));
+    await assertFails(get(ref(otherDb, `${INFO}`)));
     await assertFails(set(command(otherDb, "intruder"), { action: "SHUTDOWN", status: "PENDING", createdAt: serverTimestamp() }));
-    await assertFails(set(ref(otherDb, `${DEV}/info/name`), "pwned"));
+    await assertFails(set(ref(otherDb, `${INFO}/name`), "pwned"));
     await assertFails(get(ref(otherAgentDb, `${DEV}/commands`)));
     await assertFails(update(command(otherAgentDb, "android-owned"), { status: "PROCESSING", processingAt: Date.now() }));
     await assertFails(set(ref(otherAgentDb, `${DEV}/power/latest`), { reportedAt: serverTimestamp() }));
     const fakeUser = testEnv.authenticatedContext(ANDROID, ANON).database();
-    await assertFails(get(ref(fakeUser, `${DEV}/info`)));
+    await assertFails(get(ref(fakeUser, `${INFO}`)));
     await assertFails(set(command(fakeUser, "anon-user"), { action: "PING", status: "PENDING" }));
     // A user cannot conjure a device they have not paired, even under their own account.
-    await assertFails(set(ref(otherDb, `users/${OTHER}/devices/${PI}/info`), { name: "x", platform: "macos", pairedAt: serverTimestamp() }));
-    await assertFails(set(ref(otherDb, `users/${OTHER}/devices/${PI}/commands/x`), { action: "PING", status: "PENDING" }));
+    await assertFails(set(ref(otherDb, `users/${OTHER}/devices/${PI}`), { name: "x", platform: "macos", pairedAt: serverTimestamp() }));
+    await assertFails(set(ref(otherDb, `users/${OTHER}/data/${PI}/commands/x`), { action: "PING", status: "PENDING" }));
     // The agent reads all of its commands; it serves only its owner.
     const all = await assertSucceeds(get(ref(piDb, `${DEV}/commands`)));
     assert.ok(all.child("android-owned").exists());
-    await assertFails(get(ref(piDb, `users/${OTHER}/devices/${PI}/commands`)));
+    await assertFails(get(ref(piDb, `users/${OTHER}/data/${PI}/commands`)));
     await assertFails(get(ref(piDb, `users/${ANDROID}/devices`)));
+    await assertFails(get(ref(piDb, `users/${ANDROID}/data`)));
   });
 
   await check("Pi can claim, complete, fail, and recover stale PING commands", async () => {
@@ -772,20 +775,23 @@ try {
     await assertFails(set(ref(otherAgentDb, `agents/${PI}`), null));
     await assertFails(set(ref(otherDb, DEV), null));
     await assertFails(set(ref(piDb, DEV), null));
-    await assertSucceeds(update(ref(androidDb), { [`agents/${PI}`]: null, [DEV]: null }));
+    await assertFails(set(ref(otherDb, INFO), null));
+    await assertFails(set(ref(piDb, INFO), null));
+    await assertSucceeds(update(ref(androidDb), { [`agents/${PI}`]: null, [INFO]: null, [DEV]: null }));
+    assert.equal((await assertSucceeds(get(ref(androidDb, `users/${ANDROID}`)))).exists(), false);
     // The agent is locked out at once, and can be paired again with a new code.
     await assertFails(get(ref(piDb, `${DEV}/commands`)));
     await assertFails(set(ref(piDb, `${DEV}/power/latest`), { reportedAt: serverTimestamp() }));
     await assertSucceeds(set(ref(piDb, `pairing/${PI}`), { code: "HJKM2345", name: "Mac", platform: "macos", createdAt: serverTimestamp() }));
     await assertSucceeds(update(ref(otherDb), {
       [`agents/${PI}`]: { owner: OTHER, code: "HJKM2345", pairedAt: serverTimestamp() },
-      [`users/${OTHER}/devices/${PI}/info`]: { name: "Mac", platform: "macos", pairedAt: serverTimestamp() },
+      [`users/${OTHER}/devices/${PI}`]: { name: "Mac", platform: "macos", pairedAt: serverTimestamp() },
       [`pairing/${PI}`]: null,
     }));
-    await assertSucceeds(set(ref(piDb, `users/${OTHER}/devices/${PI}/power/latest`), { reportedAt: serverTimestamp() }));
+    await assertSucceeds(set(ref(piDb, `users/${OTHER}/data/${PI}/power/latest`), { reportedAt: serverTimestamp() }));
     await assertFails(set(ref(androidDb, `agents/${PI}`), null));
     await assertSucceeds(set(ref(piDb, `agents/${PI}`), null));
-    await assertFails(set(ref(piDb, `users/${OTHER}/devices/${PI}/power/latest`), { reportedAt: serverTimestamp() }));
+    await assertFails(set(ref(piDb, `users/${OTHER}/data/${PI}/power/latest`), { reportedAt: serverTimestamp() }));
   });
 
   await check("Deleting an account's data: only its owner, in one go", async () => {

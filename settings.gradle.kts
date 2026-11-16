@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "ComApp AV"
+rootProject.name = "ComApp"
 include(":app")

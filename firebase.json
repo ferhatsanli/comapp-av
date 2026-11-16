@@ -1,7 +1,7 @@
 {
   "database": [
     {
-      "instance": "comapp-av-default-rtdb",
+      "instance": "comapp-prod-38cb2-default-rtdb",
       "rules": "database.rules.json"
     }
   ],

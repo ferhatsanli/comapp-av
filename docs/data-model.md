@@ -6,6 +6,8 @@ Realtime Database, one shared project for every user. Rules: `database.rules.jso
 ## Who is who
 
 - **User**: signed in with Google in the app (any non-anonymous account). Owns `/users/{uid}`.
+  The list of computers (`devices`) is separate from their data (`data`) so the app can list
+  computers without downloading their reports.
 - **Agent**: the program on a computer. It signs in anonymously once and keeps that account;
   its uid is the **device id**. An agent can do nothing until a user pairs it.
 
@@ -14,9 +16,9 @@ Realtime Database, one shared project for every user. Rules: `database.rules.jso
 ```
 /pairing/{agentUid}                  { code, name, platform, createdAt }      agent writes
 /agents/{agentUid}                   { owner, code, pairedAt }                user writes (claim)
-/users/{uid}/devices/{agentUid}/
-    info                             name, platform, pairedAt, hostname, osVersion,
-                                     agentVersion, capabilities/{name}: bool
+/users/{uid}/devices/{agentUid}                 the list entry: name, platform, pairedAt, hostname,
+                                                 osVersion, agentVersion, capabilities/{name}: bool
+/users/{uid}/data/{agentUid}/
     commands/{pushId}                action, status, result | errorCode, + per-action fields
     uploads/{commandId}/torrent      base64 .torrent, removed by the agent after reading
     settings/sleepIntervalMinutes    10 | 20 | 30 | 60
@@ -36,12 +38,12 @@ Realtime Database, one shared project for every user. Rules: `database.rules.jso
    multi-path update:
    - `/agents/{agentUid}` = `{ owner: uid, code, pairedAt }` (allowed only with the right, fresh code,
      and only while the agent has no owner)
-   - `/users/{uid}/devices/{agentUid}/info` = `{ name, platform, pairedAt }`
+   - `/users/{uid}/devices/{agentUid}` = `{ name, platform, pairedAt }`
    - `/pairing/{agentUid}` = null
 3. The agent watches `/agents/{agentUid}/owner`; once set, it works under
-   `/users/{owner}/devices/{agentUid}`.
+   `/users/{owner}/data/{agentUid}` and keeps its entry in `/users/{owner}/devices/{agentUid}` fresh.
 
-Unpairing: the user deletes `/agents/{agentUid}` and the device node in one update; the agent
+Unpairing: the user deletes `/agents/{agentUid}`, the list entry and the data node in one update; the agent
 loses access at once and can publish a new code. The agent can also delete `/agents/{self}`
 (uninstall or reset).
 
@@ -49,7 +51,7 @@ loses access at once and can publish a new code. The agent can also delete `/age
 
 | Node | User (owner) | Agent (paired) |
 |---|---|---|
-| info | read, write | read, write |
+| devices/{id} (list entry) | read, write | read, write |
 | commands | create PENDING, read, delete | read all, advance status, delete finished |
 | uploads | create, delete | read, delete |
 | settings | read, write | read |
@@ -60,6 +62,6 @@ denied everywhere.
 
 ## Capabilities
 
-`info/capabilities` says what this computer supports (for example `systemUpdate: false` on
+`devices/{id}/capabilities` says what this computer supports (for example `systemUpdate: false` on
 macOS for now). The app hides what is not supported; a command the agent cannot run fails with
 `NOT_SUPPORTED`.

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">ComApp AV</string>
+    <string name="app_name">ComApp</string>
     <!-- Shown in the share sheet and "Open with" for links, magnets and .torrent files. -->
     <string name="download_on_server">Download on the server computer</string>
 </resources>

@@ -4,7 +4,7 @@
 
 - Firebase project: `comapp-av`
 - Realtime Database: `https://comapp-av-default-rtdb.europe-west1.firebasedatabase.app`
-- Android app: `com.ferhat.comappav`
+- Android app: `com.ferhatsanli.comapp`
 - Firebase App ID: `1:719144763397:android:05f1f90b7dfd564c235c6c`
 - Android test UID: `57HVnDSvZKNbJBabrDF4c2gnv462`
 - Raspberry Pi agent UID: `N8V4nrLrELa83EXRLWJsiis85Bq1`

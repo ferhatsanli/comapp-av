@@ -5,10 +5,11 @@ Layout (see docs/data-model.md):
 
   /pairing/{agentUid}                      an unpaired agent's one-time code (agent writes)
   /agents/{agentUid}                       who owns this agent (the user writes it, with the code)
-  /users/{uid}/devices/{agentUid}/...      everything about one paired computer
+  /users/{uid}/devices/{agentUid}          the short list of paired computers (name, platform, ...)
+  /users/{uid}/data/{agentUid}/...         everything else about one paired computer
 
 A user is a signed-in, non-anonymous account. An agent is an anonymous account; it may touch
-/users/{uid}/devices/{agentUid} only while /agents/{agentUid}/owner is that uid.
+/users/{uid}/devices|data/{agentUid} only while /agents/{agentUid}/owner is that uid.
 
 The expressions repeat a lot, so they are assembled here instead of being edited by hand:
 
@@ -85,7 +86,7 @@ def command_rules():
     d = "data.child('action').val()"
     results = " || ".join("(%s === '%s' && newData.child('result').val() === '%s')" % ("%s", k, v) for k, v in ACTIONS.items())
     timed = "(%s === 'SLEEP' || %s === 'SHUTDOWN')" % (a, a)
-    uploaded = ("root.child('users').child($uid).child('devices').child($deviceId)"
+    uploaded = ("root.child('users').child($uid).child('data').child($deviceId)"
                 ".child('uploads').child($commandId).child('torrent').exists()")
     create = (
         USER_DEV + " && !data.exists() && newData.exists() && newData.child('status').val() === 'PENDING'"
@@ -172,30 +173,36 @@ def agent_report(body, read=USER_DEV):
     return {".read": read, ".write": AGENT, **body}
 
 
-def device_rules():
-    intervals = "(newData.val() === 10 || newData.val() === 20 || newData.val() === 30 || newData.val() === 60)"
-    new_root = "newData.parent().parent().parent().parent().parent()"
+def info_rules():
+    """/users/{uid}/devices/{deviceId}: the entry in the user's list of computers. Kept apart
+    from the data so the app can list computers without downloading their reports."""
+    new_root = "newData.parent().parent().parent().parent()"
     return {
-        # Unpairing: the user removes the whole device (and /agents/{id}) in one update.
-        ".write": USER + " && !newData.exists()",
-        "info": {
-            ".read": EITHER,
-            # The user creates it while pairing (in the same update that claims the agent), and
-            # may rename the device; the agent keeps its own facts up to date.
-            ".write": "(" + USER + " && " + new_root + ".child('agents').child($deviceId).child('owner').val() === $uid) || " + AGENT,
-            ".validate": "newData.hasChildren(['name', 'platform', 'pairedAt'])",
-            "name": text(1, 40),
-            "platform": enum(PLATFORMS),
-            "pairedAt": PAST,
-            "hostname": text(1, 80),
-            "osVersion": text(1, 80),
-            "agentVersion": leaf("newData.isString() && newData.val().matches(/^[0-9]{1,4}(\\.[0-9]{1,4}){1,2}$/)"),
-            # What this computer can do; the phone hides the rest.
-            "capabilities": {
-                "$name": leaf("$name.matches(/^[a-zA-Z]{1,30}$/) && newData.isBoolean()"),
-            },
-            **NO_OTHER,
+        ".read": EITHER,
+        # The user creates it while pairing (in the same update that claims the agent), may
+        # rename the device, and removes it when unpairing; the agent keeps its own facts fresh.
+        ".write": "(" + USER + " && (!newData.exists() || " + new_root +
+                  ".child('agents').child($deviceId).child('owner').val() === $uid)) || (" + AGENT + " && newData.exists())",
+        ".validate": "newData.hasChildren(['name', 'platform', 'pairedAt'])",
+        "name": text(1, 40),
+        "platform": enum(PLATFORMS),
+        "pairedAt": PAST,
+        "hostname": text(1, 80),
+        "osVersion": text(1, 80),
+        "agentVersion": leaf("newData.isString() && newData.val().matches(/^[0-9]{1,4}(\\.[0-9]{1,4}){1,2}$/)"),
+        # What this computer can do; the phone hides the rest.
+        "capabilities": {
+            "$name": leaf("$name.matches(/^[a-zA-Z]{1,30}$/) && newData.isBoolean()"),
         },
+        **NO_OTHER,
+    }
+
+
+def data_rules():
+    intervals = "(newData.val() === 10 || newData.val() === 20 || newData.val() === 30 || newData.val() === 60)"
+    return {
+        # Unpairing: the user removes the whole node (with /agents/{id} and the list entry).
+        ".write": USER + " && !newData.exists()",
         "commands": command_rules(),
         "uploads": {
             "$commandId": {
@@ -368,7 +375,8 @@ def build():
                     ".read": USER,
                     # Deleting the account's data (before the account itself).
                     ".write": USER + " && !newData.exists()",
-                    "devices": {"$deviceId": device_rules()},
+                    "devices": {"$deviceId": info_rules()},
+                    "data": {"$deviceId": data_rules()},
                     **NO_OTHER,
                 },
             },

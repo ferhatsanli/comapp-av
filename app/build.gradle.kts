@@ -5,17 +5,17 @@ plugins {
 }
 
 android {
-    namespace = "com.ferhat.comappav"
+    namespace = "com.ferhatsanli.comapp"
     compileSdk {
         version = release(37)
     }
 
     defaultConfig {
-        applicationId = "com.ferhat.comappav"
+        applicationId = "com.ferhatsanli.comapp"
         minSdk = 33
         targetSdk = 36
-        versionCode = 28
-        versionName = "1.23.1"
+        versionCode = 29
+        versionName = "2.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -42,6 +42,9 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
     implementation(libs.firebase.database)
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services)
+    implementation(libs.googleid)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.ui)
