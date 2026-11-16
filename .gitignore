@@ -21,3 +21,8 @@ firebase-debug.log
 
 # Pi diagnostic output copied over with scp
 ai-output.txt
+
+# Local Claude sessions and their output
+.claude/
+Claude outputs/
+.idea/inspectionProfiles/
