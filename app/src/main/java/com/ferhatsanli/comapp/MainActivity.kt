@@ -527,11 +527,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     // for two seconds, then it fades out.
     var commandLight by remember { mutableStateOf(CommandLight.OFF) }
     LaunchedEffect(commandPending, commandStatus) {
-        if (commandPending) {
-            commandLight = CommandLight.PENDING
-        } else if (commandLight == CommandLight.PENDING) {
-            commandLight = if (commandStatus == "SUCCESS") CommandLight.SUCCESS else CommandLight.FAILED
-        }
+        commandLight = CommandLightRules.next(commandLight, commandPending, commandStatus)
     }
     LaunchedEffect(commandLight) {
         if (commandLight == CommandLight.SUCCESS || commandLight == CommandLight.FAILED) {
