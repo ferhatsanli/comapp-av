@@ -834,6 +834,20 @@ try {
     }));
   });
 
+  await check("Phone presence: the user writes online/lastSeen, the agent only reads it", async () => {
+    await assertSucceeds(set(ref(androidDb, `${DEV}/phone`), { online: true, lastSeen: serverTimestamp() }));
+    await assertSucceeds(set(ref(androidDb, `${DEV}/phone`), { online: false, lastSeen: serverTimestamp() }));
+    await assertFails(set(ref(androidDb, `${DEV}/phone`), { online: "yes", lastSeen: serverTimestamp() }));
+    await assertFails(set(ref(androidDb, `${DEV}/phone`), { online: true }));
+    await assertFails(set(ref(androidDb, `${DEV}/phone`), { online: true, lastSeen: Date.now() + 3_600_000 }));
+    await assertFails(set(ref(androidDb, `${DEV}/phone`), { online: true, lastSeen: serverTimestamp(), battery: 50 }));
+    await assertFails(set(ref(piDb, `${DEV}/phone`), { online: true, lastSeen: serverTimestamp() }));
+    await assertFails(set(ref(otherDb, `${DEV}/phone`), { online: true, lastSeen: serverTimestamp() }));
+    const seen = await assertSucceeds(get(ref(piDb, `${DEV}/phone`)));
+    assert.equal(seen.val().online, false);
+    await assertFails(get(ref(otherDb, `${DEV}/phone`)));
+  });
+
   await check("Unpairing removes the device and frees the agent; the agent can also reset itself", async () => {
     // Not by strangers.
     await assertFails(set(ref(otherDb, `agents/${PI}`), null));

@@ -105,6 +105,10 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import com.google.firebase.database.ServerValue
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -792,6 +796,34 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         }
         powerRef.addValueEventListener(listener)
         onDispose { powerRef.removeEventListener(listener) }
+    }
+
+    // Presence for the agent's window: online while the app is on screen and connected; offline
+    // when it goes to the background, and Firebase marks it offline itself if the connection drops.
+    val lifecycle = (LocalContext.current as? LifecycleOwner)?.lifecycle
+    DisposableEffect(database, lifecycle, connected == true) {
+        val presence = dataRef("phone")
+        fun state(online: Boolean) = mapOf("online" to online, "lastSeen" to ServerValue.TIMESTAMP)
+        fun goOnline() {
+            presence.onDisconnect().setValue(state(false))
+            presence.setValue(state(true))
+        }
+        fun goOffline() {
+            presence.setValue(state(false))
+            presence.onDisconnect().cancel()
+        }
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> goOnline()
+                Lifecycle.Event.ON_STOP -> goOffline()
+                else -> Unit
+            }
+        }
+        lifecycle?.addObserver(observer) // calls ON_START at once if the app is already on screen
+        onDispose {
+            lifecycle?.removeObserver(observer)
+            goOffline()
+        }
     }
 
     DisposableEffect(database) {

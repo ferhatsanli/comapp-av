@@ -222,6 +222,16 @@ def data_rules():
                 **NO_OTHER,
             },
         },
+        # The phone says whether the app is open (for the agent's window); Firebase writes the
+        # offline state itself when the app's connection drops (onDisconnect).
+        "phone": {
+            ".read": EITHER,
+            ".write": USER_DEV,
+            ".validate": "newData.hasChildren(['online', 'lastSeen'])",
+            "online": leaf("newData.isBoolean()"),
+            "lastSeen": PAST,
+            **NO_OTHER,
+        },
         "settings": {
             "sleepIntervalMinutes": {".read": EITHER, ".write": USER_DEV, ".validate": "newData.isNumber() && " + intervals},
             "downloadLimitMbps": {
