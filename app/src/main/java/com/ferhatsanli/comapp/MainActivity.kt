@@ -1369,15 +1369,15 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             accent = GlassColors.Violet,
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(
-                    Triple(PingProtocol.MEDIA_PREVIOUS, "Previous track", ::drawPreviousTrackIcon),
-                    Triple(PingProtocol.MEDIA_PLAY_PAUSE, "Play or pause", ::drawPlayPauseIcon),
-                    Triple(PingProtocol.MEDIA_NEXT, "Next track", ::drawNextTrackIcon),
+                listOf<Triple<String, String, DrawScope.(Color) -> Unit>>(
+                    Triple(PingProtocol.MEDIA_PREVIOUS, "Previous track", { drawPreviousTrackIcon(it) }),
+                    Triple(PingProtocol.MEDIA_PLAY_PAUSE, "Play or pause", { drawPlayPauseIcon(it) }),
+                    Triple(PingProtocol.MEDIA_NEXT, "Next track", { drawNextTrackIcon(it) }),
                 ).forEach { (kind, label, icon) ->
                     val button = "media-$kind"
                     GlassButton(
                         text = label,
-                        icon = { tint -> icon(this, tint) },
+                        icon = icon,
                         accent = GlassColors.Violet,
                         enabled = canSend,
                         working = activeButton == button && commandPending,
