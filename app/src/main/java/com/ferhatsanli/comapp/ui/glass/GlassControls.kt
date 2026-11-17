@@ -243,13 +243,15 @@ fun GlassButton(
     prominent: Boolean = true,
     accent: Color = GlassColors.Neutral,
     working: Boolean = false,
+    /** Drawn instead of [text], which then only names the button for screen readers. */
+    icon: (DrawScope.(Color) -> Unit)? = null,
 ) {
     Box(
         modifier
             .fillMaxWidth()
             .height(44.dp),
     ) {
-        GlassButtonFace(text, onClick, enabled, loading, prominent, accent)
+        GlassButtonFace(text, onClick, enabled, loading, prominent, accent, icon)
         // On top of the (possibly dimmed) face, so it shows at full strength on a disabled button.
         OrbitingLight(active = working, cornerRadius = ButtonCornerRadius, modifier = Modifier.matchParentSize())
     }
@@ -263,6 +265,7 @@ private fun GlassButtonFace(
     loading: Boolean,
     prominent: Boolean,
     accent: Color,
+    icon: (DrawScope.(Color) -> Unit)?,
 ) {
     val palette = LocalGlassPalette.current
     Box(
@@ -300,7 +303,8 @@ private fun GlassButtonFace(
                 ),
                 ButtonShape,
             )
-            .clickable(enabled = enabled && !loading, onClick = onClick),
+            .clickable(enabled = enabled && !loading, role = Role.Button, onClick = onClick)
+            .then(if (icon != null) Modifier.semantics { contentDescription = text } else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         if (loading) {
@@ -309,6 +313,9 @@ private fun GlassButtonFace(
                 strokeWidth = 2.dp,
                 color = Color.White,
             )
+        } else if (icon != null) {
+            val tint = if (prominent) Color.White else palette.ink
+            Canvas(Modifier.size(22.dp)) { icon(tint) }
         } else {
             // A button's label never wraps: it shrinks to fit (down to 9 sp) instead.
             AutoSizeText(
@@ -623,6 +630,59 @@ fun DrawScope.drawCommandsIcon(tint: Color) {
         strokeWidth = stroke,
         cap = StrokeCap.Round,
     )
+}
+
+/** Two triangles pointing left against a bar: previous track. */
+fun DrawScope.drawPreviousTrackIcon(tint: Color) {
+    val w = size.width
+    val h = size.height
+    drawRect(tint, Offset(w * 0.12f, h * 0.22f), Size(w * 0.09f, h * 0.56f))
+    for (tip in listOf(0.22f, 0.52f)) {
+        drawPath(
+            Path().apply {
+                moveTo(w * tip, h * 0.5f)
+                lineTo(w * (tip + 0.32f), h * 0.22f)
+                lineTo(w * (tip + 0.32f), h * 0.78f)
+                close()
+            },
+            tint,
+        )
+    }
+}
+
+/** Mirror of [drawPreviousTrackIcon]: next track. */
+fun DrawScope.drawNextTrackIcon(tint: Color) {
+    val w = size.width
+    val h = size.height
+    drawRect(tint, Offset(w * 0.79f, h * 0.22f), Size(w * 0.09f, h * 0.56f))
+    for (tip in listOf(0.78f, 0.48f)) {
+        drawPath(
+            Path().apply {
+                moveTo(w * tip, h * 0.5f)
+                lineTo(w * (tip - 0.32f), h * 0.22f)
+                lineTo(w * (tip - 0.32f), h * 0.78f)
+                close()
+            },
+            tint,
+        )
+    }
+}
+
+/** A play triangle followed by pause bars: play/pause. */
+fun DrawScope.drawPlayPauseIcon(tint: Color) {
+    val w = size.width
+    val h = size.height
+    drawPath(
+        Path().apply {
+            moveTo(w * 0.1f, h * 0.22f)
+            lineTo(w * 0.46f, h * 0.5f)
+            lineTo(w * 0.1f, h * 0.78f)
+            close()
+        },
+        tint,
+    )
+    drawRect(tint, Offset(w * 0.58f, h * 0.22f), Size(w * 0.1f, h * 0.56f))
+    drawRect(tint, Offset(w * 0.78f, h * 0.22f), Size(w * 0.1f, h * 0.56f))
 }
 
 /** Power button symbol - a broken circle with a vertical tick through the gap - for Power. */

@@ -32,4 +32,13 @@ class RecentCommandsTest {
         assertEquals("Failed (AGENT_ERROR)", RecentCommands.outcome(command("FAILED", error = "AGENT_ERROR")))
         assertEquals("Waiting for the agent", RecentCommands.outcome(command("PENDING")))
     }
+
+    @Test
+    fun mediaDetailsAreReadable() {
+        assertEquals(
+            listOf("Button" to "Volume", "Volume" to "40%"),
+            RecentCommands.details(mapOf("media" to "VOLUME", "volume" to 40L)),
+        )
+        assertEquals(listOf("Button" to "Play/Pause"), RecentCommands.details(mapOf("media" to "PLAY_PAUSE")))
+    }
 }

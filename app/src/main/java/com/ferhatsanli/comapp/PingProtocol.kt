@@ -12,6 +12,11 @@ internal object PingProtocol {
     const val SYSTEM_INFO_ACTION = "SYSTEM_INFO"
     const val TAILSCALE_ACTION = "TAILSCALE"
     const val SYSTEM_UPDATE_ACTION = "SYSTEM_UPDATE"
+    const val MEDIA_ACTION = "MEDIA"
+    const val MEDIA_PREVIOUS = "PREVIOUS"
+    const val MEDIA_PLAY_PAUSE = "PLAY_PAUSE"
+    const val MEDIA_NEXT = "NEXT"
+    const val MEDIA_VOLUME = "VOLUME"
     const val MODE_PERFORMANCE = "PERFORMANCE"
     const val MODE_POWERSAVE = "POWERSAVE"
     const val MAX_SLEEP_MINUTES = 1440
@@ -70,9 +75,25 @@ internal object PingProtocol {
         "status" to "PENDING",
     )
 
+    /**
+     * A media key ([MEDIA_PREVIOUS], [MEDIA_PLAY_PAUSE], [MEDIA_NEXT]), or [MEDIA_VOLUME] with
+     * [volume] 0-100 (clamped). The Rules want volume exactly on a VOLUME command.
+     */
+    fun mediaCommand(kind: String, volume: Int? = null): Map<String, Any> = buildMap {
+        put("action", MEDIA_ACTION)
+        put("status", "PENDING")
+        put("media", kind)
+        if (kind == MEDIA_VOLUME) put("volume", (volume ?: 0).coerceIn(0, 100))
+    }
+
     /** Error codes shared by several commands, in words; null for ones that need no explanation. */
-    fun describeError(code: String?): String? = when (code) {
-        "NOT_PERMITTED" -> "The server computer isn't set up for this yet - run install-remote-admin.sh on it once."
+    fun describeError(code: String?, action: String? = null): String? = when (code) {
+        "NOT_PERMITTED" -> if (action == MEDIA_ACTION) {
+            "The computer hasn't allowed the agent to press media keys yet. On the Mac, open System Settings > " +
+                "Privacy & Security > Accessibility, turn on Python, then try again."
+        } else {
+            "The server computer isn't set up for this yet - run install-remote-admin.sh on it once."
+        }
         "UPDATE_RUNNING" -> "A system update is running on the server computer. Try again when it has finished."
         "SLEEP_CYCLE_ACTIVE" -> "Power save already puts the server computer to sleep between checks. Switch to Performance to use Sleep."
         else -> null

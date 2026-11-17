@@ -35,9 +35,11 @@ ACTIONS = {
     "SYSTEM_INFO": "REPORTED",
     "TAILSCALE": "TAILSCALE_SET",
     "SYSTEM_UPDATE": "UPDATE_STARTED",
+    "MEDIA": "MEDIA_DONE",
 }
 # Fields the phone sets and the agent must leave alone.
-IMMUTABLE = ("action", "text", "createdAt", "durationMinutes", "mode", "language", "state", "source", "url")
+IMMUTABLE = ("action", "text", "createdAt", "durationMinutes", "mode", "language", "state", "source", "url",
+             "media", "volume")
 PLATFORMS = ("linux", "macos", "windows")
 CODE = "/^[A-HJ-NP-Z2-9]{8}$/"   # 8 characters, no 0/O/1/I
 PAIRING_TTL_MS = 600000
@@ -119,6 +121,8 @@ def command_rules():
         " && (%s === 'SPEAK' || !newData.child('language').exists())" % a +
         " && " + only("TAILSCALE", "state") +
         " && " + only("POWER_MODE", "mode") +
+        " && " + only("MEDIA", "media") +
+        " && ((%s === 'MEDIA' && newData.child('media').val() === 'VOLUME') === newData.child('volume').exists())" % a +
         " && ((%s === 'DOWNLOAD_ADD' && newData.child('source').exists() && ((newData.child('source').val() === 'TORRENT_FILE'"
         " && !newData.child('url').exists()) || (newData.child('source').val() !== 'TORRENT_FILE' && newData.child('url').exists())))"
         " || (%s !== 'DOWNLOAD_ADD' && !newData.child('source').exists() && !newData.child('url').exists()))" % (a, a) +
@@ -134,10 +138,10 @@ def command_rules():
     error = (
         "newData.isString() && (newData.val() === 'AGENT_ERROR' || newData.val() === 'NOT_SUPPORTED'"
         " || (%s && %s === 'DOWNLOAD_ADD')"
-        " || (newData.val() === 'NOT_PERMITTED' && (%s === 'TAILSCALE' || %s === 'SYSTEM_UPDATE'))"
+        " || (newData.val() === 'NOT_PERMITTED' && (%s === 'TAILSCALE' || %s === 'SYSTEM_UPDATE' || %s === 'MEDIA'))"
         " || (newData.val() === 'UPDATE_RUNNING' && (%s === 'SYSTEM_UPDATE' || %s === 'SLEEP' || %s === 'SHUTDOWN'))"
         " || (newData.val() === 'SLEEP_CYCLE_ACTIVE' && %s === 'SLEEP'))"
-        % (any_of("newData.val()", ("NOT_A_FILE", "NO_SPACE", "BAD_INPUT", "ENGINE_DOWN")), pa, pa, pa, pa, pa, pa, pa)
+        % (any_of("newData.val()", ("NOT_A_FILE", "NO_SPACE", "BAD_INPUT", "ENGINE_DOWN")), pa, pa, pa, pa, pa, pa, pa, pa)
     )
     return {
         # The user reads everything under /users/{uid} anyway (it is all theirs); the agent
@@ -159,6 +163,8 @@ def command_rules():
             "result": enum(ACTIONS.values()),
             "errorCode": leaf(error),
             "source": enum(("MAGNET", "URL", "TORRENT_FILE")),
+            "media": enum(("PREVIOUS", "PLAY_PAUSE", "NEXT", "VOLUME")),
+            "volume": whole("newData.val() >= 0 && newData.val() <= 100"),
             "url": leaf(
                 "newData.isString() && newData.val().length <= 4096 && ((newData.parent().child('source').val() === 'MAGNET'"
                 " && newData.val().matches(/^magnet:[?][^ ]+$/)) || (newData.parent().child('source').val() === 'URL'"
@@ -302,6 +308,15 @@ def data_rules():
                         **NO_OTHER,
                     },
                 },
+                **NO_OTHER,
+            }),
+        },
+        "media": {
+            "latest": agent_report({
+                ".validate": "newData.hasChildren(['volume', 'muted', 'reportedAt'])",
+                "volume": whole("newData.val() >= 0 && newData.val() <= 100"),
+                "muted": leaf("newData.isBoolean()"),
+                "reportedAt": PAST,
                 **NO_OTHER,
             }),
         },

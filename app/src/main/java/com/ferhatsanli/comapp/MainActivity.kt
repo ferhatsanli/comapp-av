@@ -67,6 +67,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import kotlin.math.roundToInt
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -141,6 +144,9 @@ import com.ferhatsanli.comapp.ui.glass.drawCommandsIcon
 import com.ferhatsanli.comapp.ui.glass.drawConsoleIcon
 import com.ferhatsanli.comapp.ui.glass.drawDownloadIcon
 import com.ferhatsanli.comapp.ui.glass.drawNetworkIcon
+import com.ferhatsanli.comapp.ui.glass.drawNextTrackIcon
+import com.ferhatsanli.comapp.ui.glass.drawPlayPauseIcon
+import com.ferhatsanli.comapp.ui.glass.drawPreviousTrackIcon
 import com.ferhatsanli.comapp.ui.glass.drawPowerIcon
 import com.ferhatsanli.comapp.ui.glass.drawReorderIcon
 import com.ferhatsanli.comapp.ui.glass.glassTextFieldColors
@@ -169,6 +175,7 @@ private enum class CardKind { INTERACTIVE, INFO }
 private enum class CardId(val kind: CardKind, val capability: String? = null) {
     PING(CardKind.INTERACTIVE),
     SPEAK(CardKind.INTERACTIVE, "speak"),
+    MEDIA(CardKind.INTERACTIVE, "media"),
     SLEEP(CardKind.INTERACTIVE, "sleep"),
     SHUTDOWN(CardKind.INTERACTIVE, "shutdown"),
     POWER_MODE(CardKind.INTERACTIVE, "powerMode"),
@@ -199,7 +206,7 @@ private enum class Category(
         "Commands",
         "Speak · Update server system",
         GlassColors.Blue,
-        listOf(CardId.SPEAK, CardId.SYSTEM_UPDATE),
+        listOf(CardId.SPEAK, CardId.MEDIA, CardId.SYSTEM_UPDATE),
         { tint -> drawCommandsIcon(tint) },
     ),
     POWER(
@@ -456,6 +463,11 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     var networkDevices by remember { mutableStateOf<List<NetworkDevice>>(emptyList()) }
     var networkScannedAt by remember { mutableStateOf<Long?>(null) }
     var powerSnapshot by remember { mutableStateOf<PowerSnapshot?>(null) }
+    // Media: the output volume the agent last reported (null until it has), and the slider's
+    // position while the user drags it.
+    var mediaVolume by remember { mutableStateOf<Int?>(null) }
+    var mediaMuted by remember { mutableStateOf(false) }
+    var volumeDraft by remember { mutableStateOf<Float?>(null) }
     // Downloads: the server computer's report, the saved speed limit, and the limit picked but not applied yet.
     var downloadItems by remember { mutableStateOf<List<DownloadItem>>(emptyList()) }
     var downloadsReportedAt by remember { mutableStateOf<Long?>(null) }
@@ -751,6 +763,23 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         }
         powerRef.addValueEventListener(listener)
         onDispose { powerRef.removeEventListener(listener) }
+    }
+
+    DisposableEffect(database) {
+        val mediaRef = dataRef("media/latest")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (!snapshot.exists()) return
+                mediaVolume = snapshot.child("volume").getValue(Long::class.java)?.toInt()?.coerceIn(0, 100)
+                mediaMuted = snapshot.child("muted").getValue(Boolean::class.java) == true
+            }
+
+            override fun onCancelled(databaseError: DatabaseError) {
+                AppLog.warn("Media", "Could not read the volume: ${databaseError.message}")
+            }
+        }
+        mediaRef.addValueEventListener(listener)
+        onDispose { mediaRef.removeEventListener(listener) }
     }
 
     // This computer's latest commands, for the Console's "Recent commands" (push IDs are in
@@ -1324,6 +1353,73 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         }
     }
 
+    // Media: previous / play-pause / next for whatever is playing on the computer, and its
+    // output volume. The slider sends one VOLUME command when the finger lifts.
+    val mediaCard: @Composable () -> Unit = {
+        val sendMedia = { kind: String, button: String, volume: Int? ->
+            if (canSend) {
+                activeButton = button
+                sendCommand(PingProtocol.MEDIA_ACTION, PingProtocol.mediaCommand(kind, volume))
+            }
+        }
+        GlassCommandCard(
+            title = "Media",
+            tag = PingProtocol.MEDIA_ACTION,
+            description = "Controls whatever is playing on the computer: music, videos, a browser tab.",
+            accent = GlassColors.Violet,
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    Triple(PingProtocol.MEDIA_PREVIOUS, "Previous track", ::drawPreviousTrackIcon),
+                    Triple(PingProtocol.MEDIA_PLAY_PAUSE, "Play or pause", ::drawPlayPauseIcon),
+                    Triple(PingProtocol.MEDIA_NEXT, "Next track", ::drawNextTrackIcon),
+                ).forEach { (kind, label, icon) ->
+                    val button = "media-$kind"
+                    GlassButton(
+                        text = label,
+                        icon = { tint -> icon(this, tint) },
+                        accent = GlassColors.Violet,
+                        enabled = canSend,
+                        working = activeButton == button && commandPending,
+                        onClick = { sendMedia(kind, button, null) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            val shown = volumeDraft ?: mediaVolume?.toFloat() ?: 0f
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Volume", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Text(
+                    when {
+                        volumeDraft != null -> "${shown.roundToInt()}%"
+                        mediaVolume == null -> "Not reported yet"
+                        mediaMuted -> "Muted (${mediaVolume}%)"
+                        else -> "${mediaVolume}%"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = LocalGlassPalette.current.inkMuted,
+                )
+            }
+            Slider(
+                value = shown,
+                onValueChange = { volumeDraft = it },
+                onValueChangeFinished = {
+                    volumeDraft?.let { sendMedia(PingProtocol.MEDIA_VOLUME, "media-volume", it.roundToInt()) }
+                    volumeDraft = null
+                },
+                valueRange = 0f..100f,
+                enabled = canSend,
+                colors = SliderDefaults.colors(
+                    thumbColor = GlassColors.Violet,
+                    activeTrackColor = GlassColors.Violet,
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics { contentDescription = "Output volume" },
+            )
+        }
+    }
+
     val sleepCard: @Composable () -> Unit = {
         // In power save the server computer already sleeps between checks on its own.
         val cycleRuns = sleepCycle?.running == true
@@ -1678,7 +1774,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                                         add("Sent" to "${timeFormat.format(java.util.Date(it))} (${formatRelativeTime(it)})")
                                     }
                                     add("Status" to RecentCommands.outcome(command))
-                                    (PingProtocol.describeError(command.errorCode)
+                                    (PingProtocol.describeError(command.errorCode, command.action)
                                         ?: DownloadProtocol.describeError(command.errorCode))?.let { add("Why" to it) }
                                     addAll(command.details)
                                     add("ID" to command.id)
@@ -2147,6 +2243,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         } else when (id) {
             CardId.PING -> pingCard()
             CardId.SPEAK -> speakCard()
+            CardId.MEDIA -> mediaCard()
             CardId.SLEEP -> sleepCard()
             CardId.SHUTDOWN -> shutdownCard()
             CardId.POWER_MODE -> powerModeCard()
@@ -2543,7 +2640,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     Text("Status: ${commandStatus ?: if (sending) "SENDING" else "WAITING"}")
                     if (commandStatus == "FAILED" && errorCode != null) {
                         Text("Error: $errorCode", color = MaterialTheme.colorScheme.error)
-                        (PingProtocol.describeError(errorCode) ?: DownloadProtocol.describeError(errorCode))?.let {
+                        (PingProtocol.describeError(errorCode, commandAction) ?: DownloadProtocol.describeError(errorCode))?.let {
                             Text(it, color = MaterialTheme.colorScheme.error)
                         }
                     }

@@ -61,4 +61,26 @@ class PingProtocolTest {
         }
         assertEquals(null, PingProtocol.tailscaleLabel(null))
     }
+
+    @Test
+    fun mediaCommandsCarryVolumeOnlyForVolume() {
+        assertEquals(
+            mapOf("action" to "MEDIA", "status" to "PENDING", "media" to "PLAY_PAUSE"),
+            PingProtocol.mediaCommand(PingProtocol.MEDIA_PLAY_PAUSE),
+        )
+        // A stray volume on a track button is dropped: the Rules refuse it there.
+        assertEquals(null, PingProtocol.mediaCommand(PingProtocol.MEDIA_NEXT, 40)["volume"])
+        assertEquals(35, PingProtocol.mediaCommand(PingProtocol.MEDIA_VOLUME, 35)["volume"])
+        assertEquals(100, PingProtocol.mediaCommand(PingProtocol.MEDIA_VOLUME, 140)["volume"])
+        assertEquals(0, PingProtocol.mediaCommand(PingProtocol.MEDIA_VOLUME, -5)["volume"])
+    }
+
+    @Test
+    fun notPermittedExplainsAccessibilityForMedia() {
+        val media = PingProtocol.describeError("NOT_PERMITTED", PingProtocol.MEDIA_ACTION)!!
+        assertEquals(true, media.contains("Accessibility"))
+        val other = PingProtocol.describeError("NOT_PERMITTED", PingProtocol.SHUTDOWN_ACTION)!!
+        assertEquals(true, other.contains("install-remote-admin.sh"))
+        assertEquals(other, PingProtocol.describeError("NOT_PERMITTED"))
+    }
 }

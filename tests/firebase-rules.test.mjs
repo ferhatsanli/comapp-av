@@ -769,6 +769,43 @@ try {
     await assertFails(get(ref(piDb, `${DEV}/power/latest`)));
   });
 
+  await check("MEDIA: track buttons and volume, exactly their fields; /media/latest from the agent", async () => {
+    for (const [id, value] of [
+      ["media-play", { action: "MEDIA", status: "PENDING", media: "PLAY_PAUSE" }],
+      ["media-next", { action: "MEDIA", status: "PENDING", media: "NEXT" }],
+      ["media-prev", { action: "MEDIA", status: "PENDING", media: "PREVIOUS" }],
+      ["media-vol", { action: "MEDIA", status: "PENDING", media: "VOLUME", volume: 35 }],
+    ]) {
+      await assertSucceeds(set(command(androidDb, id), value));
+    }
+    for (const [id, value] of [
+      ["media-none", { action: "MEDIA", status: "PENDING" }],
+      ["media-stop", { action: "MEDIA", status: "PENDING", media: "STOP" }],
+      ["media-vol-missing", { action: "MEDIA", status: "PENDING", media: "VOLUME" }],
+      ["media-vol-high", { action: "MEDIA", status: "PENDING", media: "VOLUME", volume: 101 }],
+      ["media-vol-frac", { action: "MEDIA", status: "PENDING", media: "VOLUME", volume: 12.5 }],
+      ["media-next-vol", { action: "MEDIA", status: "PENDING", media: "NEXT", volume: 10 }],
+      ["ping-media", { action: "PING", status: "PENDING", media: "NEXT" }],
+      ["ping-volume", { action: "PING", status: "PENDING", volume: 10 }],
+    ]) {
+      await assertFails(set(command(androidDb, id), value));
+    }
+    await assertSucceeds(update(command(piDb, "media-vol"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertFails(update(command(piDb, "media-vol"), { volume: 90 }));
+    await assertFails(update(command(piDb, "media-vol"), { status: "SUCCESS", result: "PONG", processingAt: null }));
+    await assertSucceeds(update(command(piDb, "media-vol"), { status: "SUCCESS", result: "MEDIA_DONE", processingAt: null }));
+    await assertSucceeds(update(command(piDb, "media-play"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertSucceeds(update(command(piDb, "media-play"), { status: "FAILED", errorCode: "NOT_PERMITTED", processingAt: null }));
+
+    await assertSucceeds(set(ref(piDb, `${DEV}/media/latest`), { volume: 35, muted: false, reportedAt: serverTimestamp() }));
+    await assertFails(set(ref(piDb, `${DEV}/media/latest`), { volume: 135, muted: false, reportedAt: serverTimestamp() }));
+    await assertFails(set(ref(piDb, `${DEV}/media/latest`), { volume: 35, muted: "no", reportedAt: serverTimestamp() }));
+    await assertFails(set(ref(piDb, `${DEV}/media/latest`), { volume: 35, muted: false, reportedAt: serverTimestamp(), track: "x" }));
+    await assertFails(set(ref(androidDb, `${DEV}/media/latest`), { volume: 35, muted: false, reportedAt: serverTimestamp() }));
+    await assertSucceeds(get(ref(androidDb, `${DEV}/media/latest`)));
+    await assertFails(get(ref(otherDb, `${DEV}/media/latest`)));
+  });
+
   await check("Unpairing removes the device and frees the agent; the agent can also reset itself", async () => {
     // Not by strangers.
     await assertFails(set(ref(otherDb, `agents/${PI}`), null));

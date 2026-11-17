@@ -46,12 +46,22 @@ internal object RecentCommands {
             "source" to "Source",
             "url" to "Link",
             "durationMinutes" to "Duration",
+            "media" to "Button",
+            "volume" to "Volume",
         )
         return labels.mapNotNull { (key, label) ->
             val value = fields[key] ?: return@mapNotNull null
             val text = when (key) {
                 "language" -> if (value == PingProtocol.LANGUAGE_EN) "English" else "Turkish"
                 "state" -> if (value == "UP") "On" else "Off"
+                "media" -> when (value) {
+                    PingProtocol.MEDIA_PREVIOUS -> "Previous"
+                    PingProtocol.MEDIA_PLAY_PAUSE -> "Play/Pause"
+                    PingProtocol.MEDIA_NEXT -> "Next"
+                    PingProtocol.MEDIA_VOLUME -> "Volume"
+                    else -> value.toString()
+                }
+                "volume" -> "${(value as? Number)?.toInt() ?: value}%"
                 "durationMinutes" -> (value as? Number)?.toInt()?.let { PingProtocol.formatDuration(it) } ?: value.toString()
                 else -> value.toString()
             }
