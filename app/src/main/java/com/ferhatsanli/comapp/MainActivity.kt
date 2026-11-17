@@ -176,8 +176,8 @@ private enum class CardId(val kind: CardKind, val capability: String? = null) {
     PING(CardKind.INTERACTIVE),
     SPEAK(CardKind.INTERACTIVE, "speak"),
     MEDIA(CardKind.INTERACTIVE, "media"),
-    SLEEP(CardKind.INTERACTIVE, "sleep"),
-    SHUTDOWN(CardKind.INTERACTIVE, "shutdown"),
+    // Sleep, Restart and Shutdown in one card; each part hides when the computer can't do it.
+    POWER_CONTROLS(CardKind.INTERACTIVE, "shutdown"),
     POWER_MODE(CardKind.INTERACTIVE, "powerMode"),
     SCAN(CardKind.INTERACTIVE, "scan"),
     DEVICES(CardKind.INFO, "scan"),
@@ -211,9 +211,9 @@ private enum class Category(
     ),
     POWER(
         "Power",
-        "Sleep · Shutdown · Power mode · History",
+        "Sleep · Restart · Shutdown · Power mode · History",
         GlassColors.Amber,
-        listOf(CardId.SLEEP, CardId.SHUTDOWN, CardId.POWER_MODE, CardId.POWER_HISTORY),
+        listOf(CardId.POWER_CONTROLS, CardId.POWER_MODE, CardId.POWER_HISTORY),
         { tint -> drawPowerIcon(tint) },
     ),
     NETWORK(
@@ -414,6 +414,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     var speakText by rememberSaveable { mutableStateOf("") }
     var sleepRequest by remember { mutableStateOf<SleepRequest?>(null) }
     var shutdownRequested by remember { mutableStateOf(false) }
+    var restartRequested by remember { mutableStateOf(false) }
     var requestedPowerMode by remember { mutableStateOf<String?>(null) }
     // Portrait: which bottom-nav tab is active.
     var selectedCategory by rememberSaveable { mutableStateOf(Category.COMMANDS) }
@@ -453,7 +454,9 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     val cardOrders = remember {
         mutableStateMapOf<Category, List<CardId>>().apply {
             Category.entries.forEach { category ->
-                put(category, CardOrder.apply(savedOrders[category.name], category.cards) { it.name })
+                // Before 2.2 Sleep and Shutdown were two cards; the merged one takes Sleep's place.
+                val saved = savedOrders[category.name]?.map { if (it == "SLEEP") CardId.POWER_CONTROLS.name else it }
+                put(category, CardOrder.apply(saved, category.cards) { it.name })
             }
         }
     }
@@ -927,6 +930,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     finishedAt = snapshot.child("finishedAt").getValue(Long::class.java),
                     error = snapshot.child("error").getValue(String::class.java),
                     rebootRecommended = snapshot.child("rebootRecommended").getValue(Boolean::class.java),
+                    macos = device.platform == "macos",
                 )
                 systemUpdate = status
                 if (previous?.running == true && !status.running) {
@@ -1028,11 +1032,11 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     if (request != null) {
         AlertDialog(
             onDismissRequest = { sleepRequest = null },
-            title = { Text("Put the laptop to sleep?") },
+            title = { Text("Put the computer to sleep?") },
             text = {
                 Text(
-                    "The laptop suspends in a few seconds and wakes up " +
-                        (if (request.minutes == null) "in the morning" else "after ${PingProtocol.formatDuration(request.minutes)}") +
+                    "The computer sleeps in a few seconds and wakes up " +
+                        (if (request.minutes == null) "at its morning wake-up time" else "after ${PingProtocol.formatDuration(request.minutes)}") +
                         ". Until then it cannot receive commands.",
                 )
             },
@@ -1112,6 +1116,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             confirmButton = {
                 TextButton(onClick = {
                     shutdownRequested = false
+                    activeButton = "shutdown"
                     sendCommand(
                         PingProtocol.SHUTDOWN_ACTION,
                         PingProtocol.shutdownCommand(),
@@ -1120,6 +1125,34 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             },
             dismissButton = {
                 TextButton(onClick = { shutdownRequested = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (restartRequested) {
+        AlertDialog(
+            onDismissRequest = { restartRequested = false },
+            title = { Text("Restart the computer?") },
+            text = {
+                Text(
+                    "It restarts right away and comes back by itself. The agent reconnects once it " +
+                        "is up again." + if (device.platform == "macos") {
+                            " Apps get the chance to save; one with unsaved work can stop the restart " +
+                                "on the Mac's screen."
+                        } else {
+                            ""
+                        },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    restartRequested = false
+                    activeButton = "restart"
+                    sendCommand(PingProtocol.RESTART_ACTION, PingProtocol.restartCommand())
+                }) { Text("Restart", color = GlassColors.Amber) }
+            },
+            dismissButton = {
+                TextButton(onClick = { restartRequested = false }) { Text("Cancel") }
             },
         )
     }
@@ -1420,91 +1453,125 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         }
     }
 
-    val sleepCard: @Composable () -> Unit = {
+    // Power: Sleep (until morning or for a set time), then Restart and Shut down side by side.
+    val powerControlsCard: @Composable () -> Unit = {
         // In power save the server computer already sleeps between checks on its own.
         val cycleRuns = sleepCycle?.running == true
+        val canSleep = device.supports("sleep")
+        val canRestart = device.supports("restart")
+        val palette = LocalGlassPalette.current
         GlassCommandCard(
-            title = "Sleep",
-            tag = PingProtocol.SLEEP_ACTION,
-            description = if (cycleRuns) {
-                "Not needed in power save: the laptop already sleeps between checks. Switch to " +
-                    "Performance to use Sleep."
-            } else {
-                "Suspend the laptop. It wakes up by itself."
+            title = "Power",
+            tag = "POWER",
+            description = when {
+                serverAsleep ->
+                    "The computer is asleep. Restart and Shut down only run right away, so send them while it's awake."
+                cycleRuns -> "Sleep isn't needed in power save: the computer already sleeps between checks."
+                else -> "Sleep wakes up by itself. Restart comes back by itself. Shut down needs someone " +
+                    "at the computer to turn it on again."
             },
             accent = GlassColors.Violet,
         ) {
-            GlassButton(
-                text = "Sleep until morning",
-                accent = GlassColors.Violet,
-                enabled = canSend && !cycleRuns,
-                working = activeButton == "sleep-morning" && commandPending,
-                onClick = {
-                    activeButton = "sleep-morning"
-                    sleepRequest = SleepRequest(null)
-                },
-            )
-            Text(
-                "Or sleep for a set time",
-                style = MaterialTheme.typography.labelLarge,
-                color = LocalGlassPalette.current.inkMuted,
-            )
-            val chipScroll = rememberScrollState()
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalEdgeFade(chipScroll)
-                    .horizontalScroll(chipScroll),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                listOf(2, 10, 30, 60, 120).forEach { minutes ->
-                    GlassChip(
-                        text = PingProtocol.formatDuration(minutes),
-                        onClick = {
-                            sleepHours = (minutes / 60).toString()
-                            sleepMinutes = (minutes % 60).toString()
+            if (canSleep) {
+                GlassButton(
+                    text = "Sleep until morning",
+                    accent = GlassColors.Violet,
+                    enabled = canSend && !cycleRuns,
+                    working = activeButton == "sleep-morning" && commandPending,
+                    onClick = {
+                        activeButton = "sleep-morning"
+                        sleepRequest = SleepRequest(null)
+                    },
+                )
+                Text(
+                    "Or sleep for a set time",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = LocalGlassPalette.current.inkMuted,
+                )
+                val chipScroll = rememberScrollState()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalEdgeFade(chipScroll)
+                        .horizontalScroll(chipScroll),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf(2, 10, 30, 60, 120).forEach { minutes ->
+                        GlassChip(
+                            text = PingProtocol.formatDuration(minutes),
+                            onClick = {
+                                sleepHours = (minutes / 60).toString()
+                                sleepMinutes = (minutes % 60).toString()
+                            },
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = sleepHours,
+                        onValueChange = { value ->
+                            if (value.length <= 2 && value.all { it.isDigit() }) sleepHours = value
                         },
+                        label = { Text("Hours") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        shape = GlassFieldShape,
+                        colors = glassTextFieldColors(),
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = sleepMinutes,
+                        onValueChange = { value ->
+                            if (value.length <= 2 && value.all { it.isDigit() }) sleepMinutes = value
+                        },
+                        label = { Text("Minutes") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        shape = GlassFieldShape,
+                        colors = glassTextFieldColors(),
+                        modifier = Modifier.weight(1f),
                     )
                 }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = sleepHours,
-                    onValueChange = { value ->
-                        if (value.length <= 2 && value.all { it.isDigit() }) sleepHours = value
+                GlassButton(
+                    text = if (sleepTotalValid) "Sleep for ${PingProtocol.formatDuration(sleepTotal)}"
+                    else "Enter 1 minute to 24 hours",
+                    accent = GlassColors.Violet,
+                    prominent = false,
+                    enabled = canSend && sleepTotalValid && !cycleRuns,
+                    working = activeButton == "sleep-timed" && commandPending,
+                    onClick = {
+                        activeButton = "sleep-timed"
+                        sleepRequest = SleepRequest(sleepTotal)
                     },
-                    label = { Text("Hours") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    shape = GlassFieldShape,
-                    colors = glassTextFieldColors(),
-                    modifier = Modifier.weight(1f),
-                )
-                OutlinedTextField(
-                    value = sleepMinutes,
-                    onValueChange = { value ->
-                        if (value.length <= 2 && value.all { it.isDigit() }) sleepMinutes = value
-                    },
-                    label = { Text("Minutes") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    shape = GlassFieldShape,
-                    colors = glassTextFieldColors(),
-                    modifier = Modifier.weight(1f),
                 )
             }
-            GlassButton(
-                text = if (sleepTotalValid) "Sleep for ${PingProtocol.formatDuration(sleepTotal)}"
-                else "Enter 1 minute to 24 hours",
-                accent = GlassColors.Violet,
-                prominent = false,
-                enabled = canSend && sleepTotalValid && !cycleRuns,
-                working = activeButton == "sleep-timed" && commandPending,
-                onClick = {
-                    activeButton = "sleep-timed"
-                    sleepRequest = SleepRequest(sleepTotal)
-                },
+            Text(
+                "Restart or shut down",
+                style = MaterialTheme.typography.labelLarge,
+                color = palette.inkMuted,
             )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (canRestart) {
+                    GlassButton(
+                        text = "Restart",
+                        accent = GlassColors.Amber,
+                        enabled = canSend && !serverAsleep,
+                        loading = sending && commandAction == PingProtocol.RESTART_ACTION,
+                        working = activeButton == "restart" && commandPending,
+                        onClick = { restartRequested = true },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                GlassButton(
+                    text = "Shut down",
+                    accent = GlassColors.Red,
+                    enabled = canSend && !serverAsleep,
+                    loading = sending && commandAction == PingProtocol.SHUTDOWN_ACTION,
+                    working = activeButton == "shutdown" && commandPending,
+                    onClick = { shutdownRequested = true },
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
     }
 
@@ -1524,31 +1591,6 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 onClick = {
                     activeButton = "scan"
                     sendCommand(PingProtocol.SCAN_ACTION, PingProtocol.scanCommand())
-                },
-            )
-        }
-    }
-
-    val shutdownCard: @Composable () -> Unit = {
-        GlassCommandCard(
-            title = "Shutdown",
-            tag = PingProtocol.SHUTDOWN_ACTION,
-            description = if (serverAsleep) {
-                "The laptop is asleep. Shutdown only runs right away, so send it while it's awake."
-            } else {
-                "Power the laptop off completely. No automatic wake-up - physical access is needed to turn it back on."
-            },
-            accent = GlassColors.Red,
-        ) {
-            GlassButton(
-                text = "Shut down now",
-                accent = GlassColors.Red,
-                enabled = canSend && !serverAsleep,
-                loading = sending && commandAction == PingProtocol.SHUTDOWN_ACTION,
-                working = activeButton == "shutdown" && commandPending,
-                onClick = {
-                    activeButton = "shutdown"
-                    shutdownRequested = true
                 },
             )
         }
@@ -2134,7 +2176,12 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         GlassCommandCard(
             title = "Update server system",
             tag = "UPDATE",
-            description = "Install every available update on the server computer (dnf upgrade).",
+            description = if (device.platform == "macos") {
+                "App Store apps first, then macOS updates from Software Update. It never restarts " +
+                    "by itself: when an update needs a restart, restart from here when it suits you."
+            } else {
+                "Install every available update on the server computer (dnf upgrade)."
+            },
             accent = GlassColors.Green,
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -2165,6 +2212,16 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 style = MaterialTheme.typography.bodySmall,
                 color = if (status?.state == "FAILED") GlassColors.Red else palette.inkMuted,
             )
+            if (status?.state == "DONE" && status.rebootRecommended == true && device.supports("restart")) {
+                GlassButton(
+                    text = "Restart now",
+                    accent = GlassColors.Amber,
+                    prominent = false,
+                    enabled = canSend && !serverAsleep,
+                    working = activeButton == "restart" && commandPending,
+                    onClick = { restartRequested = true },
+                )
+            }
         }
     }
 
@@ -2244,8 +2301,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             CardId.PING -> pingCard()
             CardId.SPEAK -> speakCard()
             CardId.MEDIA -> mediaCard()
-            CardId.SLEEP -> sleepCard()
-            CardId.SHUTDOWN -> shutdownCard()
+            CardId.POWER_CONTROLS -> powerControlsCard()
             CardId.POWER_MODE -> powerModeCard()
             CardId.SCAN -> scanCard()
             CardId.DEVICES -> networkCard()

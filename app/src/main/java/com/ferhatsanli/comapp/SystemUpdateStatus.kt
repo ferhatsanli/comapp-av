@@ -14,6 +14,8 @@ internal data class SystemUpdateStatus(
     val finishedAt: Long?,
     val error: String?,
     val rebootRecommended: Boolean?,
+    /** macOS reports App Store apps and system updates rather than packages. */
+    val macos: Boolean = false,
 ) {
     val running: Boolean get() = state == "RUNNING"
 
@@ -28,6 +30,7 @@ internal data class SystemUpdateStatus(
     fun describe(): String = when (state) {
         "RUNNING" -> {
             val step = when (phase) {
+                "APP_STORE" -> "Updating App Store apps"
                 "REFRESHING" -> "Checking for updates"
                 "DOWNLOADING" -> if (total > 0) "Downloading $done of $total" else "Downloading"
                 "INSTALLING" -> if (total > 0) "Installing $done of $total" else "Installing"
@@ -38,7 +41,8 @@ internal data class SystemUpdateStatus(
         }
         "DONE" -> when {
             phase == "UP_TO_DATE" -> "Already up to date."
-            packages > 0 -> "Updated $packages package${if (packages == 1) "" else "s"}." +
+            packages > 0 -> (if (macos) "Installed $packages update" else "Updated $packages package") +
+                "${if (packages == 1) "" else "s"}." +
                 if (rebootRecommended == true) " A restart is recommended." else ""
             else -> "Update finished." + if (rebootRecommended == true) " A restart is recommended." else ""
         }

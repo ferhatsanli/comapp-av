@@ -36,6 +36,7 @@ ACTIONS = {
     "TAILSCALE": "TAILSCALE_SET",
     "SYSTEM_UPDATE": "UPDATE_STARTED",
     "MEDIA": "MEDIA_DONE",
+    "RESTART": "RESTARTING",
 }
 # Fields the phone sets and the agent must leave alone.
 IMMUTABLE = ("action", "text", "createdAt", "durationMinutes", "mode", "language", "state", "source", "url",
@@ -87,7 +88,7 @@ def command_rules():
     a = "newData.child('action').val()"
     d = "data.child('action').val()"
     results = " || ".join("(%s === '%s' && newData.child('result').val() === '%s')" % ("%s", k, v) for k, v in ACTIONS.items())
-    timed = "(%s === 'SLEEP' || %s === 'SHUTDOWN')" % (a, a)
+    timed = "(%s === 'SLEEP' || %s === 'SHUTDOWN' || %s === 'RESTART')" % (a, a, a)
     uploaded = ("root.child('users').child($uid).child('data').child($deviceId)"
                 ".child('uploads').child($commandId).child('torrent').exists()")
     create = (
@@ -138,10 +139,12 @@ def command_rules():
     error = (
         "newData.isString() && (newData.val() === 'AGENT_ERROR' || newData.val() === 'NOT_SUPPORTED'"
         " || (%s && %s === 'DOWNLOAD_ADD')"
-        " || (newData.val() === 'NOT_PERMITTED' && (%s === 'TAILSCALE' || %s === 'SYSTEM_UPDATE' || %s === 'MEDIA'))"
-        " || (newData.val() === 'UPDATE_RUNNING' && (%s === 'SYSTEM_UPDATE' || %s === 'SLEEP' || %s === 'SHUTDOWN'))"
+        " || (newData.val() === 'NOT_PERMITTED' && (%s === 'TAILSCALE' || %s === 'SYSTEM_UPDATE' || %s === 'MEDIA'"
+        " || %s === 'SLEEP'))"
+        " || (newData.val() === 'UPDATE_RUNNING' && (%s === 'SYSTEM_UPDATE' || %s === 'SLEEP' || %s === 'SHUTDOWN'"
+        " || %s === 'RESTART'))"
         " || (newData.val() === 'SLEEP_CYCLE_ACTIVE' && %s === 'SLEEP'))"
-        % (any_of("newData.val()", ("NOT_A_FILE", "NO_SPACE", "BAD_INPUT", "ENGINE_DOWN")), pa, pa, pa, pa, pa, pa, pa, pa)
+        % (any_of("newData.val()", ("NOT_A_FILE", "NO_SPACE", "BAD_INPUT", "ENGINE_DOWN")), pa, pa, pa, pa, pa, pa, pa, pa, pa, pa)
     )
     return {
         # The user reads everything under /users/{uid} anyway (it is all theirs); the agent
@@ -324,7 +327,7 @@ def data_rules():
             "update": agent_report({
                 ".validate": "newData.hasChildren(['state', 'phase', 'percent'])",
                 "state": enum(("RUNNING", "DONE", "FAILED")),
-                "phase": enum(("REFRESHING", "DOWNLOADING", "INSTALLING", "VERIFYING", "FINISHED", "UP_TO_DATE")),
+                "phase": enum(("APP_STORE", "REFRESHING", "DOWNLOADING", "INSTALLING", "VERIFYING", "FINISHED", "UP_TO_DATE")),
                 "percent": whole("newData.val() >= 0 && newData.val() <= 100"),
                 "done": whole(),
                 "total": whole(),

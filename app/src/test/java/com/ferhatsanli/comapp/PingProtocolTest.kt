@@ -83,4 +83,11 @@ class PingProtocolTest {
         assertEquals(true, other.contains("install-remote-admin.sh"))
         assertEquals(other, PingProtocol.describeError("NOT_PERMITTED"))
     }
+
+    @Test
+    fun timedSleepWithoutTheAdminSetupPointsToTheMacScript() {
+        assertEquals(true, PingProtocol.describeError("NOT_PERMITTED", PingProtocol.SLEEP_ACTION)!!.contains("install-macos-admin.sh"))
+        val update = PingProtocol.describeError("NOT_PERMITTED", PingProtocol.SYSTEM_UPDATE_ACTION)!!
+        assertEquals(true, update.contains("install-macos-admin.sh") && update.contains("install-remote-admin.sh"))
+    }
 }

@@ -40,4 +40,12 @@ class SystemUpdateStatusTest {
         assert(status("FAILED", "FINISHED", error = "INTERRUPTED").describe().contains("stopped before it finished"))
         assertEquals("The update failed.", status("FAILED", "FINISHED").describe())
     }
+
+    @Test
+    fun macosUpdatesStartWithTheAppStoreAndCountUpdates() {
+        val running = SystemUpdateStatus("RUNNING", "APP_STORE", 12, 0, 0, 1, null, null, null, null, macos = true)
+        assertEquals("Updating App Store apps · 12%", running.describe())
+        val done = SystemUpdateStatus("DONE", "FINISHED", 100, 0, 0, 2, null, null, null, true, macos = true)
+        assertEquals("Installed 2 updates. A restart is recommended.", done.describe())
+    }
 }

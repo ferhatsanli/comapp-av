@@ -806,6 +806,34 @@ try {
     await assertFails(get(ref(otherDb, `${DEV}/media/latest`)));
   });
 
+  await check("RESTART: fresh timestamp, no extra fields, RESTARTING; timed SLEEP may fail NOT_PERMITTED; App Store phase", async () => {
+    const restart = (extra = {}) => ({ action: "RESTART", status: "PENDING", createdAt: serverTimestamp(), ...extra });
+    await assertSucceeds(set(command(androidDb, "restart-ok"), restart()));
+    await assertFails(set(command(androidDb, "restart-no-time"), { action: "RESTART", status: "PENDING" }));
+    await assertFails(set(command(androidDb, "restart-old"), restart({ createdAt: Date.now() - 120_000 })));
+    await assertFails(set(command(androidDb, "restart-duration"), restart({ durationMinutes: 5 })));
+    await assertFails(set(command(androidDb, "restart-text"), restart({ text: "x" })));
+    await assertSucceeds(update(command(piDb, "restart-ok"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertFails(update(command(piDb, "restart-ok"), { status: "SUCCESS", result: "POWERING_OFF", processingAt: null }));
+    await assertSucceeds(update(command(piDb, "restart-ok"), { status: "SUCCESS", result: "RESTARTING", processingAt: null }));
+    await assertSucceeds(set(command(androidDb, "restart-busy"), restart()));
+    await assertSucceeds(update(command(piDb, "restart-busy"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertSucceeds(update(command(piDb, "restart-busy"), { status: "FAILED", errorCode: "UPDATE_RUNNING", processingAt: null }));
+
+    await assertSucceeds(set(command(androidDb, "sleep-no-rule"), {
+      action: "SLEEP", status: "PENDING", createdAt: serverTimestamp(), durationMinutes: 30,
+    }));
+    await assertSucceeds(update(command(piDb, "sleep-no-rule"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertSucceeds(update(command(piDb, "sleep-no-rule"), { status: "FAILED", errorCode: "NOT_PERMITTED", processingAt: null }));
+
+    await assertSucceeds(set(ref(piDb, `${DEV}/system/update`), {
+      state: "RUNNING", phase: "APP_STORE", percent: 10, done: 0, total: 0, packages: 1, startedAt: Date.now(),
+    }));
+    await assertSucceeds(set(ref(piDb, `${DEV}/system/update`), {
+      state: "FAILED", phase: "FINISHED", percent: 40, error: "UPDATE_EXIT_1", finishedAt: serverTimestamp(),
+    }));
+  });
+
   await check("Unpairing removes the device and frees the agent; the agent can also reset itself", async () => {
     // Not by strangers.
     await assertFails(set(ref(otherDb, `agents/${PI}`), null));

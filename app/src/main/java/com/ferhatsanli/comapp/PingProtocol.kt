@@ -8,6 +8,7 @@ internal object PingProtocol {
     const val SLEEP_ACTION = "SLEEP"
     const val SCAN_ACTION = "SCAN"
     const val SHUTDOWN_ACTION = "SHUTDOWN"
+    const val RESTART_ACTION = "RESTART"
     const val POWER_MODE_ACTION = "POWER_MODE"
     const val SYSTEM_INFO_ACTION = "SYSTEM_INFO"
     const val TAILSCALE_ACTION = "TAILSCALE"
@@ -62,6 +63,13 @@ internal object PingProtocol {
         "createdAt" to ServerValue.TIMESTAMP,
     )
 
+    /** Restarts the server computer right away; like SHUTDOWN, only while the command is fresh. */
+    fun restartCommand(): Map<String, Any> = mapOf(
+        "action" to RESTART_ACTION,
+        "status" to "PENDING",
+        "createdAt" to ServerValue.TIMESTAMP,
+    )
+
     /** Turns Tailscale on the server computer on ([on]) or off. */
     fun tailscaleCommand(on: Boolean): Map<String, String> = mapOf(
         "action" to TAILSCALE_ACTION,
@@ -88,11 +96,16 @@ internal object PingProtocol {
 
     /** Error codes shared by several commands, in words; null for ones that need no explanation. */
     fun describeError(code: String?, action: String? = null): String? = when (code) {
-        "NOT_PERMITTED" -> if (action == MEDIA_ACTION) {
-            "The computer hasn't allowed the agent to press media keys yet. On the Mac, open System Settings > " +
-                "Privacy & Security > Accessibility, turn on Python, then try again."
-        } else {
-            "The server computer isn't set up for this yet - run install-remote-admin.sh on it once."
+        "NOT_PERMITTED" -> when (action) {
+            MEDIA_ACTION ->
+                "The computer hasn't allowed the agent to press media keys yet. On the Mac, open System Settings > " +
+                    "Privacy & Security > Accessibility, turn on Python, then try again."
+            SLEEP_ACTION ->
+                "A timed sleep needs the admin setup on the Mac: run install-macos-admin.sh on it once. " +
+                    "Sleep until morning works without it."
+            else ->
+                "The server computer isn't set up for this yet. Run the admin setup on it once: " +
+                    "install-macos-admin.sh on a Mac, install-remote-admin.sh on Linux."
         }
         "UPDATE_RUNNING" -> "A system update is running on the server computer. Try again when it has finished."
         "SLEEP_CYCLE_ACTIVE" -> "Power save already puts the server computer to sleep between checks. Switch to Performance to use Sleep."
