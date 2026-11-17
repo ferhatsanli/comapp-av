@@ -864,6 +864,21 @@ try {
     await assertSucceeds(set(alias("AA-BB-CC-DD-EE-FF"), null));
   });
 
+  await check("CAFFEINATE: state ON/OFF only, CAFFEINATE_SET; /power/latest reports it", async () => {
+    await assertSucceeds(set(command(androidDb, "caf-on"), { action: "CAFFEINATE", status: "PENDING", state: "ON" }));
+    await assertSucceeds(set(command(androidDb, "caf-off"), { action: "CAFFEINATE", status: "PENDING", state: "OFF" }));
+    await assertFails(set(command(androidDb, "caf-up"), { action: "CAFFEINATE", status: "PENDING", state: "UP" }));
+    await assertFails(set(command(androidDb, "caf-none"), { action: "CAFFEINATE", status: "PENDING" }));
+    await assertFails(set(command(androidDb, "caf-text"), { action: "CAFFEINATE", status: "PENDING", state: "ON", text: "x" }));
+    await assertFails(set(command(androidDb, "ping-on"), { action: "PING", status: "PENDING", state: "ON" }));
+    await assertSucceeds(update(command(piDb, "caf-on"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertFails(update(command(piDb, "caf-on"), { state: "OFF" }));
+    await assertFails(update(command(piDb, "caf-on"), { status: "SUCCESS", result: "TAILSCALE_SET", processingAt: null }));
+    await assertSucceeds(update(command(piDb, "caf-on"), { status: "SUCCESS", result: "CAFFEINATE_SET", processingAt: null }));
+    await assertSucceeds(set(ref(piDb, `${DEV}/power/latest`), { reportedAt: serverTimestamp(), caffeinate: true }));
+    await assertFails(set(ref(piDb, `${DEV}/power/latest`), { reportedAt: serverTimestamp(), caffeinate: "on" }));
+  });
+
   await check("Unpairing removes the device and frees the agent; the agent can also reset itself", async () => {
     // Not by strangers.
     await assertFails(set(ref(otherDb, `agents/${PI}`), null));

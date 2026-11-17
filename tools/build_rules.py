@@ -37,6 +37,7 @@ ACTIONS = {
     "SYSTEM_UPDATE": "UPDATE_STARTED",
     "MEDIA": "MEDIA_DONE",
     "RESTART": "RESTARTING",
+    "CAFFEINATE": "CAFFEINATE_SET",
 }
 # Fields the phone sets and the agent must leave alone.
 IMMUTABLE = ("action", "text", "createdAt", "durationMinutes", "mode", "language", "state", "source", "url",
@@ -120,7 +121,9 @@ def command_rules():
         " && ((%s && newData.child('createdAt').exists()) || (!%s && !newData.child('createdAt').exists()))" % (timed, timed) +
         " && (%s === 'SLEEP' || !newData.child('durationMinutes').exists())" % a +
         " && (%s === 'SPEAK' || !newData.child('language').exists())" % a +
-        " && " + only("TAILSCALE", "state") +
+        " && ((%s === 'TAILSCALE' && (newData.child('state').val() === 'UP' || newData.child('state').val() === 'DOWN'))"
+        " || (%s === 'CAFFEINATE' && (newData.child('state').val() === 'ON' || newData.child('state').val() === 'OFF'))"
+        " || (%s !== 'TAILSCALE' && %s !== 'CAFFEINATE' && !newData.child('state').exists()))" % (a, a, a, a) +
         " && " + only("POWER_MODE", "mode") +
         " && " + only("MEDIA", "media") +
         " && ((%s === 'MEDIA' && newData.child('media').val() === 'VOLUME') === newData.child('volume').exists())" % a +
@@ -158,7 +161,7 @@ def command_rules():
             "durationMinutes": whole("newData.val() >= 1 && newData.val() <= 1440"),
             "mode": enum(("PERFORMANCE", "POWERSAVE")),
             "createdAt": PAST,
-            "state": enum(("UP", "DOWN")),
+            "state": enum(("UP", "DOWN", "ON", "OFF")),
             "language": enum(("tr", "en")),
             "text": text(1, 300),
             "status": enum(("PENDING", "PROCESSING", "SUCCESS", "FAILED")),
@@ -286,6 +289,7 @@ def data_rules():
                 },
                 "desktop": enum(("ON", "OFF")),
                 "tailscale": enum(("RUNNING", "STOPPED", "STARTING", "NEEDS_LOGIN", "DAEMON_OFF", "NOT_INSTALLED", "UNKNOWN")),
+                "caffeinate": leaf("newData.isBoolean()"),
                 **NO_OTHER,
             }),
             "cycle": agent_report({

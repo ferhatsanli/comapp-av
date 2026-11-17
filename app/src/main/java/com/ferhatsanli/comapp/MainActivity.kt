@@ -306,6 +306,8 @@ private data class PowerSnapshot(
     val tailscale: String?,
     /** ON while the graphical desktop runs; OFF in text mode (power save). */
     val desktop: String?,
+    /** A Mac kept awake by `caffeinate` (null where the agent doesn't report it). */
+    val caffeinate: Boolean? = null,
 )
 
 /** One /power/history sample: CPU usage (%) and package power (W), either may be missing. */
@@ -428,6 +430,8 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     var sleepRequest by remember { mutableStateOf<SleepRequest?>(null) }
     var shutdownRequested by remember { mutableStateOf(false) }
     var restartRequested by remember { mutableStateOf(false) }
+    // Caffeinate: what the switch was just set to, until the agent reports the real state.
+    var caffeinateWanted by remember { mutableStateOf<Boolean?>(null) }
     var requestedPowerMode by remember { mutableStateOf<String?>(null) }
     // Portrait: which bottom-nav tab is active.
     var selectedCategory by rememberSaveable { mutableStateOf(Category.COMMANDS) }
@@ -806,6 +810,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     ecTempC = system.child("ecTempC").getValue(Long::class.java),
                     powerMode = snapshot.child("powerMode").getValue(String::class.java),
                     tailscale = snapshot.child("tailscale").getValue(String::class.java),
+                    caffeinate = snapshot.child("caffeinate").getValue(Boolean::class.java),
                     desktop = snapshot.child("desktop").getValue(String::class.java),
                 )
             }
@@ -1691,6 +1696,28 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     onClick = {
                         activeButton = "sleep-timed"
                         sleepRequest = SleepRequest(sleepTotal)
+                    },
+                )
+            }
+            if (device.supports("caffeinate")) {
+                val reported = powerSnapshot?.caffeinate
+                LaunchedEffect(reported, commandPending) {
+                    // The report (or a finished command) settles the switch.
+                    if (!commandPending && (reported == caffeinateWanted || commandStatus == "FAILED")) caffeinateWanted = null
+                }
+                GlassSwitchRow(
+                    title = "Caffeinate",
+                    subtitle = "Keeps the Mac awake until you turn it off. The display may still turn off, " +
+                        "and closing the lid still puts it to sleep.",
+                    checked = caffeinateWanted ?: (reported == true),
+                    enabled = canSend,
+                    working = activeButton == "caffeinate" && commandPending,
+                    accent = GlassColors.Amber,
+                    onCheckedChange = { on ->
+                        caffeinateWanted = on
+                        activeButton = "caffeinate"
+                        AppLog.info("Power", "Caffeinate ${if (on) "on" else "off"} requested")
+                        sendCommand(PingProtocol.CAFFEINATE_ACTION, PingProtocol.caffeinateCommand(on))
                     },
                 )
             }

@@ -90,4 +90,13 @@ class PingProtocolTest {
         val update = PingProtocol.describeError("NOT_PERMITTED", PingProtocol.SYSTEM_UPDATE_ACTION)!!
         assertEquals(true, update.contains("install-macos-admin.sh") && update.contains("install-remote-admin.sh"))
     }
+
+    @Test
+    fun caffeinateCommandIsOnOrOff() {
+        assertEquals(
+            mapOf("action" to "CAFFEINATE", "status" to "PENDING", "state" to "ON"),
+            PingProtocol.caffeinateCommand(true),
+        )
+        assertEquals("OFF", PingProtocol.caffeinateCommand(false)["state"])
+    }
 }

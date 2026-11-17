@@ -53,7 +53,7 @@ internal object RecentCommands {
             val value = fields[key] ?: return@mapNotNull null
             val text = when (key) {
                 "language" -> if (value == PingProtocol.LANGUAGE_EN) "English" else "Turkish"
-                "state" -> if (value == "UP") "On" else "Off"
+                "state" -> if (value == "UP" || value == "ON") "On" else "Off"
                 "media" -> when (value) {
                     PingProtocol.MEDIA_PREVIOUS -> "Previous"
                     PingProtocol.MEDIA_PLAY_PAUSE -> "Play/Pause"

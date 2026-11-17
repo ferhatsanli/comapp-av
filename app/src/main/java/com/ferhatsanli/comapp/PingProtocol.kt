@@ -9,6 +9,7 @@ internal object PingProtocol {
     const val SCAN_ACTION = "SCAN"
     const val SHUTDOWN_ACTION = "SHUTDOWN"
     const val RESTART_ACTION = "RESTART"
+    const val CAFFEINATE_ACTION = "CAFFEINATE"
     const val POWER_MODE_ACTION = "POWER_MODE"
     const val SYSTEM_INFO_ACTION = "SYSTEM_INFO"
     const val TAILSCALE_ACTION = "TAILSCALE"
@@ -68,6 +69,13 @@ internal object PingProtocol {
         "action" to RESTART_ACTION,
         "status" to "PENDING",
         "createdAt" to ServerValue.TIMESTAMP,
+    )
+
+    /** Keeps the Mac awake with `caffeinate` ([on]) or lets it sleep again. */
+    fun caffeinateCommand(on: Boolean): Map<String, String> = mapOf(
+        "action" to CAFFEINATE_ACTION,
+        "status" to "PENDING",
+        "state" to if (on) "ON" else "OFF",
     )
 
     /** Turns Tailscale on the server computer on ([on]) or off. */
