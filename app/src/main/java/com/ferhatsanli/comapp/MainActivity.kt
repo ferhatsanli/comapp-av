@@ -262,6 +262,8 @@ private const val SPEECH_LANGUAGE_KEY = "language"
 
 /** How long to wait for the keyboard to slide in before scrolling the Speak field above it. */
 private const val SPEAK_FIELD_SCROLL_DELAY_MILLIS = 300L
+// How long the slider keeps showing a sent volume while waiting for the agent to report it.
+private const val VOLUME_CONFIRM_TIMEOUT_MILLIS = 8_000L
 
 /** Key of the category order in [CardOrderStore]; each category's cards are saved under its name. */
 private const val CATEGORY_ORDER_KEY = "categories"
@@ -471,6 +473,10 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     var mediaVolume by remember { mutableStateOf<Int?>(null) }
     var mediaMuted by remember { mutableStateOf(false) }
     var volumeDraft by remember { mutableStateOf<Float?>(null) }
+    // The value the finger left the slider at: shown (instead of the last report) until the agent
+    // reports it, and sent as soon as no other command is in flight.
+    var volumeTarget by remember { mutableStateOf<Int?>(null) }
+    var volumeSent by remember { mutableStateOf<Int?>(null) }
     // Downloads: the server computer's report, the saved speed limit, and the limit picked but not applied yet.
     var downloadItems by remember { mutableStateOf<List<DownloadItem>>(emptyList()) }
     var downloadsReportedAt by remember { mutableStateOf<Long?>(null) }
@@ -1419,12 +1425,27 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     )
                 }
             }
-            val shown = volumeDraft ?: mediaVolume?.toFloat() ?: 0f
+            LaunchedEffect(volumeTarget, canSend) {
+                val target = volumeTarget
+                if (target != null && canSend && target != volumeSent) {
+                    volumeSent = target
+                    sendMedia(PingProtocol.MEDIA_VOLUME, "media-volume", target)
+                }
+            }
+            LaunchedEffect(mediaVolume) {
+                if (mediaVolume != null && mediaVolume == volumeTarget) volumeTarget = null
+            }
+            LaunchedEffect(volumeSent) {
+                // No report for it (failed, or an output the Mac can't set): show the real volume again.
+                delay(VOLUME_CONFIRM_TIMEOUT_MILLIS)
+                if (volumeTarget != null && volumeTarget == volumeSent) volumeTarget = null
+            }
+            val shown = volumeDraft ?: volumeTarget?.toFloat() ?: mediaVolume?.toFloat() ?: 0f
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Volume", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 Text(
                     when {
-                        volumeDraft != null -> "${shown.roundToInt()}%"
+                        volumeDraft != null || volumeTarget != null -> "${shown.roundToInt()}%"
                         mediaVolume == null -> "Not reported yet"
                         mediaMuted -> "Muted (${mediaVolume}%)"
                         else -> "${mediaVolume}%"
@@ -1436,12 +1457,19 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             Slider(
                 value = shown,
                 onValueChange = { volumeDraft = it },
+                // Nothing is sent while the finger moves; only where it is lifted.
                 onValueChangeFinished = {
-                    volumeDraft?.let { sendMedia(PingProtocol.MEDIA_VOLUME, "media-volume", it.roundToInt()) }
+                    volumeDraft?.roundToInt()?.let { value ->
+                        if (value != (volumeTarget ?: mediaVolume)) {
+                            volumeTarget = value
+                            volumeSent = null
+                        }
+                    }
                     volumeDraft = null
                 },
                 valueRange = 0f..100f,
-                enabled = canSend,
+                // Stays usable while a command is in flight; the new value waits for its turn.
+                enabled = connected == true,
                 colors = SliderDefaults.colors(
                     thumbColor = GlassColors.Violet,
                     activeTrackColor = GlassColors.Violet,
