@@ -48,7 +48,7 @@ class CommandLightTest {
     /** Draws the light on black, 300 dp wide, and counts pixels of its color on the middle row. */
     private fun drawn(light: CommandLight, matches: (Int, Int, Int) -> Boolean): Triple<Int, Boolean, Boolean> {
         rule.setContent {
-            Box(Modifier.width(300.dp).height(10.dp).background(Color.Black).testTag("light")) {
+            Box(Modifier.width(300.dp).height(14.dp).background(Color.Black).testTag("light")) {
                 CommandStatusLight(light)
             }
         }

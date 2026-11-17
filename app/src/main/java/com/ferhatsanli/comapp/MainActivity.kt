@@ -23,6 +23,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
@@ -272,6 +273,8 @@ private const val SPEAK_FIELD_SCROLL_DELAY_MILLIS = 300L
 private const val VOLUME_CONFIRM_TIMEOUT_MILLIS = 8_000L
 // How long the status light stays green or red before it fades out.
 private const val COMMAND_LIGHT_HOLD_MILLIS = 2_000L
+// The Rules accept device names up to this long.
+private const val MAX_DEVICE_NAME_LENGTH = 60
 
 /** Key of the category order in [CardOrderStore]; each category's cards are saved under its name. */
 private const val CATEGORY_ORDER_KEY = "categories"
@@ -474,6 +477,9 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     var sleepHours by rememberSaveable { mutableStateOf("0") }
     var sleepMinutes by rememberSaveable { mutableStateOf("30") }
     var networkDevices by remember { mutableStateOf<List<NetworkDevice>>(emptyList()) }
+    // The user's own names for devices, by MAC (long press a device in "On the network").
+    var deviceNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var renaming by remember { mutableStateOf<NetworkDevice?>(null) }
     var networkScannedAt by remember { mutableStateOf<Long?>(null) }
     var powerSnapshot by remember { mutableStateOf<PowerSnapshot?>(null) }
     // Media: the output volume the agent last reported (null until it has), and the slider's
@@ -737,6 +743,25 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             commandRef.addValueEventListener(listener)
             onDispose { commandRef.removeEventListener(listener) }
         }
+    }
+
+    DisposableEffect(database) {
+        val namesRef = dataRef("network/aliases")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                deviceNames = snapshot.children.mapNotNull { child ->
+                    val mac = child.key ?: return@mapNotNull null
+                    val name = child.getValue(String::class.java) ?: return@mapNotNull null
+                    mac to name
+                }.toMap()
+            }
+
+            override fun onCancelled(databaseError: DatabaseError) {
+                AppLog.warn("Network", "Could not read the device names: ${databaseError.message}")
+            }
+        }
+        namesRef.addValueEventListener(listener)
+        onDispose { namesRef.removeEventListener(listener) }
     }
 
     DisposableEffect(database) {
@@ -1179,6 +1204,54 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             },
             dismissButton = {
                 TextButton(onClick = { shutdownRequested = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    renaming?.let { device ->
+        var newName by remember(device.mac) { mutableStateOf(deviceNames[device.mac].orEmpty()) }
+        val nameRef = dataRef("network/aliases/${device.mac}")
+        fun finish(value: String?) {
+            renaming = null
+            nameRef.setValue(value)
+                .addOnSuccessListener {
+                    AppLog.info("Network", if (value == null) "Name removed from ${device.mac}" else "Named ${device.mac} \"$value\"")
+                }
+                .addOnFailureListener { exception ->
+                    error = exception.localizedMessage ?: "Could not save the name."
+                    AppLog.error("Network", "Could not save the name of ${device.mac}: $error")
+                }
+        }
+        AlertDialog(
+            onDismissRequest = { renaming = null },
+            title = { Text("Name this device") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "${device.mac.replace('-', ':')} · ${device.ip}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LocalGlassPalette.current.inkMuted,
+                    )
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { value -> if (value.length <= MAX_DEVICE_NAME_LENGTH) newName = value.replace('\n', ' ') },
+                        label = { Text("Name") },
+                        singleLine = true,
+                        shape = GlassFieldShape,
+                        colors = glassTextFieldColors(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = newName.isNotBlank(), onClick = { finish(newName.trim()) }) { Text("Save") }
+            },
+            dismissButton = {
+                Row {
+                    if (deviceNames.containsKey(device.mac)) {
+                        TextButton(onClick = { finish(null) }) { Text("Remove name", color = GlassColors.Red) }
+                    }
+                    TextButton(onClick = { renaming = null }) { Text("Cancel") }
+                }
             },
         )
     }
@@ -1774,34 +1847,45 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     )
                 }
                 Text(
-                    "Tap a device to copy its IP address.",
+                    "Tap a device to copy its IP address. Press and hold to give it a name.",
                     style = MaterialTheme.typography.labelSmall,
                     color = LocalGlassPalette.current.inkFaint,
                 )
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    networkDevices.forEach { device ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    clipboard.setText(AnnotatedString(device.ip))
-                                    Toast.makeText(
-                                        context,
-                                        "Copied ${device.ip}",
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
-                                },
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Text(device.name, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                device.ip,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = LocalGlassPalette.current.inkFaint,
-                            )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    networkDevices
+                        .map { device -> device to (deviceNames[device.mac] ?: device.name) }
+                        .sortedWith(compareBy({ it.second == "Unknown" }, { it.second.lowercase() }))
+                        .forEach { (device, shownName) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .combinedClickable(
+                                        onClick = {
+                                            clipboard.setText(AnnotatedString(device.ip))
+                                            Toast.makeText(context, "Copied ${device.ip}", Toast.LENGTH_SHORT).show()
+                                        },
+                                        onLongClickLabel = "Name this device",
+                                        onLongClick = { renaming = device },
+                                    ),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(shownName, fontWeight = FontWeight.Medium)
+                                    // The MAC tells unnamed devices apart.
+                                    Text(
+                                        device.mac.replace('-', ':'),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = LocalGlassPalette.current.inkFaint,
+                                    )
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    device.ip,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = LocalGlassPalette.current.inkFaint,
+                                )
+                            }
                         }
-                    }
                 }
             }
         }

@@ -848,6 +848,22 @@ try {
     await assertFails(get(ref(otherDb, `${DEV}/phone`)));
   });
 
+  await check("Device names: the user names a MAC, removes it again; the agent only reads them", async () => {
+    const alias = (mac) => ref(androidDb, `${DEV}/network/aliases/${mac}`);
+    await assertSucceeds(set(alias("AA-BB-CC-DD-EE-FF"), "Living room TV"));
+    await assertSucceeds(set(alias("AA-BB-CC-DD-EE-FF"), "TV"));
+    await assertFails(set(alias("aa-bb-cc-dd-ee-ff"), "lower case MAC"));
+    await assertFails(set(alias("AA:BB:CC:DD:EE:FF"), "colons"));
+    await assertFails(set(alias("AA-BB-CC-DD-EE-01"), ""));
+    await assertFails(set(alias("AA-BB-CC-DD-EE-02"), "x".repeat(61)));
+    await assertFails(set(alias("AA-BB-CC-DD-EE-03"), 42));
+    await assertFails(set(ref(piDb, `${DEV}/network/aliases/AA-BB-CC-DD-EE-FF`), "Agent"));
+    await assertFails(set(ref(otherDb, `${DEV}/network/aliases/AA-BB-CC-DD-EE-FF`), "Stranger"));
+    const names = await assertSucceeds(get(ref(piDb, `${DEV}/network/aliases`)));
+    assert.equal(names.val()["AA-BB-CC-DD-EE-FF"], "TV");
+    await assertSucceeds(set(alias("AA-BB-CC-DD-EE-FF"), null));
+  });
+
   await check("Unpairing removes the device and frees the agent; the agent can also reset itself", async () => {
     // Not by strangers.
     await assertFails(set(ref(otherDb, `agents/${PI}`), null));

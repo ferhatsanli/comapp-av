@@ -14,8 +14,8 @@ android {
         applicationId = "com.ferhatsanli.comapp"
         minSdk = 33
         targetSdk = 36
-        versionCode = 34
-        versionName = "2.4.0"
+        versionCode = 35
+        versionName = "2.5.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -39,6 +39,10 @@ android {
     // pixel by pixel without a device).
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        unitTests.all { test ->
+            // List every test in the CI log, so a skipped test can't pass unnoticed.
+            test.testLogging { events("passed", "skipped", "failed") }
+        }
     }
 }
 

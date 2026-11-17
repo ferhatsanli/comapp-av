@@ -240,6 +240,16 @@ def data_rules():
             },
         },
         "network": {
+            # Names the user gives to devices on the network (long press in "On the network"),
+            # by MAC address in the scan's form (AA-BB-CC-DD-EE-FF). Kept across scans.
+            "aliases": {
+                ".read": EITHER,
+                "$mac": {
+                    ".write": USER_DEV,
+                    ".validate": "$mac.matches(/^([0-9A-F]{2}-){5}[0-9A-F]{2}$/) && newData.isString()"
+                                 " && newData.val().length >= 1 && newData.val().length <= 60",
+                },
+            },
             "latest": agent_report({
                 ".validate": "newData.hasChildren(['scannedAt', 'devices'])",
                 "scannedAt": PAST,

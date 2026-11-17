@@ -887,7 +887,7 @@ fun CommandStatusLight(light: CommandLight, modifier: Modifier = Modifier) {
     Canvas(
         modifier
             .fillMaxWidth()
-            .height(10.dp),
+            .height(14.dp),
     ) {
         val strength = alpha * flicker.value
         if (strength <= 0.01f) return@Canvas
@@ -895,7 +895,7 @@ fun CommandStatusLight(light: CommandLight, modifier: Modifier = Modifier) {
         // The glow around the tube.
         drawRect(
             Brush.verticalGradient(
-                listOf(Color.Transparent, color.copy(alpha = 0.45f * strength), Color.Transparent),
+                listOf(Color.Transparent, color.copy(alpha = 0.6f * strength), Color.Transparent),
             ),
         )
         // The tube: full width, a little dimmer towards the ends.
@@ -910,7 +910,7 @@ fun CommandStatusLight(light: CommandLight, modifier: Modifier = Modifier) {
             ),
             start = Offset(0f, y),
             end = Offset(size.width, y),
-            strokeWidth = 2.dp.toPx(),
+            strokeWidth = 3.dp.toPx(),
             cap = StrokeCap.Round,
         )
         // Its hot white core.
