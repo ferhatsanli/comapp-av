@@ -11,4 +11,6 @@ object GlassColors {
     val Green = Color(0xFF34B27B)
     val Red = Color(0xFFE5484D)
     val Amber = Color(0xFFD9A441)
+    /** A command on its way (the status light). */
+    val Orange = Color(0xFFFF9F0A)
 }

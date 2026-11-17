@@ -133,6 +133,8 @@ import com.ferhatsanli.comapp.ui.glass.GlassFolderRow
 import com.ferhatsanli.comapp.ui.glass.GlassIconButton
 import com.ferhatsanli.comapp.ui.glass.GlassFieldShape
 import com.ferhatsanli.comapp.ui.glass.GlassNavSurface
+import com.ferhatsanli.comapp.ui.glass.CommandLight
+import com.ferhatsanli.comapp.ui.glass.CommandStatusLight
 import com.ferhatsanli.comapp.ui.glass.GlassProgressBar
 import com.ferhatsanli.comapp.ui.glass.ChartPoint
 import com.ferhatsanli.comapp.ui.glass.GlassLineChart
@@ -264,6 +266,8 @@ private const val SPEECH_LANGUAGE_KEY = "language"
 private const val SPEAK_FIELD_SCROLL_DELAY_MILLIS = 300L
 // How long the slider keeps showing a sent volume while waiting for the agent to report it.
 private const val VOLUME_CONFIRM_TIMEOUT_MILLIS = 8_000L
+// How long the status light stays green or red before it fades out.
+private const val COMMAND_LIGHT_HOLD_MILLIS = 2_000L
 
 /** Key of the category order in [CardOrderStore]; each category's cards are saved under its name. */
 private const val CATEGORY_ORDER_KEY = "categories"
@@ -515,6 +519,22 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     // While the server computer sleeps, commands wait in the queue - several may be sent, and
     // they all run at the next wake-up.
     val serverAsleep = sleepCycle?.sleeping == true
+    // The light under the bottom bar: orange while a command is on its way, then green or red
+    // for two seconds, then it fades out.
+    var commandLight by remember { mutableStateOf(CommandLight.OFF) }
+    LaunchedEffect(commandPending, commandStatus) {
+        if (commandPending) {
+            commandLight = CommandLight.PENDING
+        } else if (commandLight == CommandLight.PENDING) {
+            commandLight = if (commandStatus == "SUCCESS") CommandLight.SUCCESS else CommandLight.FAILED
+        }
+    }
+    LaunchedEffect(commandLight) {
+        if (commandLight == CommandLight.SUCCESS || commandLight == CommandLight.FAILED) {
+            delay(COMMAND_LIGHT_HOLD_MILLIS)
+            commandLight = CommandLight.OFF
+        }
+    }
     val canSend = connected == true &&
         !sending &&
         (commandStatus !in setOf("PENDING", "PROCESSING") || (serverAsleep && commandStatus == "PENDING"))
@@ -1112,7 +1132,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     if (shutdownRequested) {
         AlertDialog(
             onDismissRequest = { shutdownRequested = false },
-            title = { Text("Shut the laptop down completely?") },
+            title = { Text("Shut the computer down completely?") },
             text = {
                 Text(
                     "It powers off immediately, with no delay. Unlike Sleep, it will " +
@@ -1312,7 +1332,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         GlassCommandCard(
             title = "Speak",
             tag = PingProtocol.SPEAK_ACTION,
-            description = "The laptop reads your text out loud.",
+            description = "The computer reads your text out loud.",
             accent = GlassColors.Indigo,
             headerAction = {
                 GlassContentButton(
@@ -1762,24 +1782,30 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     // Portrait: a fixed bottom navigation bar, pinned outside the scrolling content.
     val bottomNav: @Composable () -> Unit = {
         GlassNavSurface(Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier
+            // The glass runs on behind the system navigation bar; the tabs and the light stay above it.
+            Column(
+                Modifier
                     .fillMaxWidth()
-                    // The glass runs on behind the system navigation bar; the tabs stay above it.
-                    .windowInsetsPadding(WindowInsets.navigationBars)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    .windowInsetsPadding(WindowInsets.navigationBars),
             ) {
-                categoryOrder.forEach { category ->
-                    GlassBottomNavItem(
-                        label = category.label,
-                        selected = selectedCategory == category,
-                        accent = category.accent,
-                        onClick = { selectedCategory = category },
-                        modifier = Modifier.weight(1f),
-                        icon = category.icon,
-                    )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    categoryOrder.forEach { category ->
+                        GlassBottomNavItem(
+                            label = category.label,
+                            selected = selectedCategory == category,
+                            accent = category.accent,
+                            onClick = { selectedCategory = category },
+                            modifier = Modifier.weight(1f),
+                            icon = category.icon,
+                        )
+                    }
                 }
+                CommandStatusLight(commandLight)
             }
         }
     }
@@ -2738,9 +2764,9 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                         Text(
                             when (commandAction) {
                                 PingProtocol.SPEAK_ACTION -> "The agent spoke your text."
-                                PingProtocol.SLEEP_ACTION -> "The laptop is going to sleep."
+                                PingProtocol.SLEEP_ACTION -> "The computer is going to sleep."
                                 PingProtocol.SCAN_ACTION -> "Network scan complete."
-                                PingProtocol.SHUTDOWN_ACTION -> "The laptop is powering off now."
+                                PingProtocol.SHUTDOWN_ACTION -> "The computer is powering off now."
                                 PingProtocol.POWER_MODE_ACTION -> "Power mode updated."
                                 PingProtocol.SYSTEM_INFO_ACTION -> "System info refreshed."
                                 PingProtocol.TAILSCALE_ACTION -> "Tailscale switched."
@@ -2794,7 +2820,13 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     Scaffold(
         containerColor = Color.Transparent,
         contentColor = LocalGlassPalette.current.ink,
-        bottomBar = { if (!isLandscape) bottomNav() },
+        bottomBar = {
+            if (isLandscape) {
+                CommandStatusLight(commandLight, Modifier.windowInsetsPadding(WindowInsets.navigationBars))
+            } else {
+                bottomNav()
+            }
+        },
     ) { padding ->
         PullToRefreshBox(
             isRefreshing = refreshing,

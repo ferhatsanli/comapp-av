@@ -1,6 +1,9 @@
 package com.ferhatsanli.comapp.ui.glass
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.geometry.RoundRect
@@ -836,3 +839,87 @@ fun glassTextFieldColors(): TextFieldColors {
 }
 
 val GlassFieldShape = RoundedCornerShape(10.dp)
+
+
+/** What the status light under the bottom bar shows about the latest command. */
+enum class CommandLight { OFF, PENDING, SUCCESS, FAILED }
+
+/**
+ * A thin full-width light, like a fluorescent tube: orange while a command is pending, then
+ * green or red for a moment, then it fades out. It flickers on like a tube when it starts.
+ * Its height is always reserved, so the layout never jumps when it turns on or off.
+ */
+@Composable
+fun CommandStatusLight(light: CommandLight, modifier: Modifier = Modifier) {
+    var lastColor by remember { mutableStateOf(GlassColors.Orange) }
+    val target = when (light) {
+        CommandLight.PENDING -> GlassColors.Orange
+        CommandLight.SUCCESS -> GlassColors.Green
+        CommandLight.FAILED -> GlassColors.Red
+        CommandLight.OFF -> lastColor // keeps its color while it fades
+    }
+    if (light != CommandLight.OFF) lastColor = target
+    val color by animateColorAsState(target, tween(durationMillis = 250), label = "lightColor")
+    val alpha by animateFloatAsState(
+        if (light == CommandLight.OFF) 0f else 1f,
+        tween(durationMillis = if (light == CommandLight.OFF) 700 else 150),
+        label = "lightAlpha",
+    )
+    val flicker = remember { Animatable(1f) }
+    var wasOff by remember { mutableStateOf(true) }
+    LaunchedEffect(light) {
+        if (light == CommandLight.PENDING && wasOff) {
+            flicker.snapTo(0f)
+            flicker.animateTo(
+                1f,
+                keyframes {
+                    durationMillis = 360
+                    0.9f at 50
+                    0.15f at 100
+                    1f at 170
+                    0.55f at 240
+                    1f at 360
+                },
+            )
+        }
+        wasOff = light == CommandLight.OFF
+    }
+    Canvas(
+        modifier
+            .fillMaxWidth()
+            .height(10.dp),
+    ) {
+        val strength = alpha * flicker.value
+        if (strength <= 0.01f) return@Canvas
+        val y = size.height / 2
+        // The glow around the tube.
+        drawRect(
+            Brush.verticalGradient(
+                listOf(Color.Transparent, color.copy(alpha = 0.45f * strength), Color.Transparent),
+            ),
+        )
+        // The tube: full width, a little dimmer towards the ends.
+        drawLine(
+            brush = Brush.horizontalGradient(
+                listOf(
+                    color.copy(alpha = 0.55f * strength),
+                    color.copy(alpha = strength),
+                    color.copy(alpha = strength),
+                    color.copy(alpha = 0.55f * strength),
+                ),
+            ),
+            start = Offset(0f, y),
+            end = Offset(size.width, y),
+            strokeWidth = 2.dp.toPx(),
+            cap = StrokeCap.Round,
+        )
+        // Its hot white core.
+        drawLine(
+            color = Color.White.copy(alpha = 0.6f * strength),
+            start = Offset(size.width * 0.02f, y),
+            end = Offset(size.width * 0.98f, y),
+            strokeWidth = 0.8.dp.toPx(),
+            cap = StrokeCap.Round,
+        )
+    }
+}

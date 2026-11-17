@@ -80,7 +80,8 @@ internal object DownloadProtocol {
         "NOT_A_FILE" -> "That link is a web page, not a file."
         "NO_SPACE" -> "Not enough free space on the server computer for this download."
         "BAD_INPUT" -> "The server computer couldn't use that link or torrent - it may be broken or invalid."
-        "ENGINE_DOWN" -> "The torrent engine (aria2) isn't running on the server computer."
+        "ENGINE_DOWN" -> "The torrent engine (aria2) isn't running on the server computer. Set it up once: " +
+            "install-macos-downloads.sh on a Mac, install-downloads.sh on Linux. Plain links work without it."
         else -> null
     }
 
