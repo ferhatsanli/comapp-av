@@ -879,6 +879,34 @@ try {
     await assertFails(set(ref(piDb, `${DEV}/power/latest`), { reportedAt: serverTimestamp(), caffeinate: "on" }));
   });
 
+  await check("Apps: OPEN_APP carries a bundle ID, LIST_APPS nothing; /apps/latest from the agent", async () => {
+    const open = (extra = {}) => ({ action: "OPEN_APP", status: "PENDING", app: "com.apple.Safari", ...extra });
+    await assertSucceeds(set(command(androidDb, "app-ok"), open()));
+    await assertFails(set(command(androidDb, "app-none"), { action: "OPEN_APP", status: "PENDING" }));
+    await assertFails(set(command(androidDb, "app-path"), open({ app: "/Applications/Safari.app" })));
+    await assertFails(set(command(androidDb, "app-shell"), open({ app: "com.apple.Safari; rm -rf ~" })));
+    await assertFails(set(command(androidDb, "app-text"), open({ text: "x" })));
+    await assertSucceeds(set(command(androidDb, "list-ok"), { action: "LIST_APPS", status: "PENDING" }));
+    await assertFails(set(command(androidDb, "list-app"), { action: "LIST_APPS", status: "PENDING", app: "com.apple.Safari" }));
+    await assertFails(set(command(androidDb, "ping-app"), { action: "PING", status: "PENDING", app: "com.apple.Safari" }));
+    await assertSucceeds(update(command(piDb, "app-ok"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertFails(update(command(piDb, "app-ok"), { app: "com.apple.Terminal" }));
+    await assertSucceeds(update(command(piDb, "app-ok"), { status: "FAILED", errorCode: "BAD_INPUT", processingAt: null }));
+    await assertSucceeds(update(command(piDb, "list-ok"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertFails(update(command(piDb, "list-ok"), { status: "FAILED", errorCode: "BAD_INPUT", processingAt: null }));
+    await assertSucceeds(update(command(piDb, "list-ok"), { status: "SUCCESS", result: "APPS_LISTED", processingAt: null }));
+
+    const list = ref(piDb, `${DEV}/apps/latest`);
+    const item = { bundleId: "com.apple.Safari", name: "Safari", icon: "iVBORw0KGgo=" };
+    await assertSucceeds(set(list, { items: { com_apple_Safari: item }, updatedAt: serverTimestamp() }));
+    await assertFails(set(list, { items: { "com.apple.Safari": item }, updatedAt: serverTimestamp() }));
+    await assertFails(set(list, { items: { com_apple_Safari: { ...item, path: "/Applications" } }, updatedAt: serverTimestamp() }));
+    await assertFails(set(list, { items: { com_apple_Safari: { ...item, icon: "x".repeat(30001) } }, updatedAt: serverTimestamp() }));
+    await assertFails(set(ref(androidDb, `${DEV}/apps/latest`), { items: { com_apple_Safari: item }, updatedAt: serverTimestamp() }));
+    const read = await assertSucceeds(get(ref(androidDb, `${DEV}/apps/latest/items/com_apple_Safari/name`)));
+    assert.equal(read.val(), "Safari");
+  });
+
   await check("Unpairing removes the device and frees the agent; the agent can also reset itself", async () => {
     // Not by strangers.
     await assertFails(set(ref(otherDb, `agents/${PI}`), null));

@@ -43,6 +43,7 @@ internal object RecentCommands {
             "language" to "Language",
             "mode" to "Mode",
             "state" to "Turn",
+            "app" to "App",
             "source" to "Source",
             "url" to "Link",
             "durationMinutes" to "Duration",

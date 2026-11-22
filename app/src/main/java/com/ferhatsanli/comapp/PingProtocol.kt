@@ -10,6 +10,8 @@ internal object PingProtocol {
     const val SHUTDOWN_ACTION = "SHUTDOWN"
     const val RESTART_ACTION = "RESTART"
     const val CAFFEINATE_ACTION = "CAFFEINATE"
+    const val OPEN_APP_ACTION = "OPEN_APP"
+    const val LIST_APPS_ACTION = "LIST_APPS"
     const val POWER_MODE_ACTION = "POWER_MODE"
     const val SYSTEM_INFO_ACTION = "SYSTEM_INFO"
     const val TAILSCALE_ACTION = "TAILSCALE"
@@ -71,6 +73,16 @@ internal object PingProtocol {
         "createdAt" to ServerValue.TIMESTAMP,
     )
 
+    /** Opens the app with this bundle ID (one from /apps/latest) on the computer. */
+    fun openAppCommand(bundleId: String): Map<String, String> = mapOf(
+        "action" to OPEN_APP_ACTION,
+        "status" to "PENDING",
+        "app" to bundleId,
+    )
+
+    /** Asks the computer to send its app list again (after installing something). */
+    fun listAppsCommand(): Map<String, String> = mapOf("action" to LIST_APPS_ACTION, "status" to "PENDING")
+
     /** Keeps the Mac awake with `caffeinate` ([on]) or lets it sleep again. */
     fun caffeinateCommand(on: Boolean): Map<String, String> = mapOf(
         "action" to CAFFEINATE_ACTION,
@@ -104,6 +116,11 @@ internal object PingProtocol {
 
     /** Error codes shared by several commands, in words; null for ones that need no explanation. */
     fun describeError(code: String?, action: String? = null): String? = when (code) {
+        "BAD_INPUT" -> if (action == OPEN_APP_ACTION) {
+            "That app isn't on the computer's list anymore. Refresh the list and try again."
+        } else {
+            null
+        }
         "NOT_PERMITTED" -> when (action) {
             MEDIA_ACTION ->
                 "The computer hasn't allowed the agent to press media keys yet. On the Mac, open System Settings > " +

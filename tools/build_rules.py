@@ -38,9 +38,11 @@ ACTIONS = {
     "MEDIA": "MEDIA_DONE",
     "RESTART": "RESTARTING",
     "CAFFEINATE": "CAFFEINATE_SET",
+    "OPEN_APP": "APP_OPENED",
+    "LIST_APPS": "APPS_LISTED",
 }
 # Fields the phone sets and the agent must leave alone.
-IMMUTABLE = ("action", "text", "createdAt", "durationMinutes", "mode", "language", "state", "source", "url",
+IMMUTABLE = ("action", "app", "text", "createdAt", "durationMinutes", "mode", "language", "state", "source", "url",
              "media", "volume")
 PLATFORMS = ("linux", "macos", "windows")
 CODE = "/^[A-HJ-NP-Z2-9]{8}$/"   # 8 characters, no 0/O/1/I
@@ -126,6 +128,7 @@ def command_rules():
         " || (%s !== 'TAILSCALE' && %s !== 'CAFFEINATE' && !newData.child('state').exists()))" % (a, a, a, a) +
         " && " + only("POWER_MODE", "mode") +
         " && " + only("MEDIA", "media") +
+        " && " + only("OPEN_APP", "app") +
         " && ((%s === 'MEDIA' && newData.child('media').val() === 'VOLUME') === newData.child('volume').exists())" % a +
         " && ((%s === 'DOWNLOAD_ADD' && newData.child('source').exists() && ((newData.child('source').val() === 'TORRENT_FILE'"
         " && !newData.child('url').exists()) || (newData.child('source').val() !== 'TORRENT_FILE' && newData.child('url').exists())))"
@@ -142,6 +145,7 @@ def command_rules():
     error = (
         "newData.isString() && (newData.val() === 'AGENT_ERROR' || newData.val() === 'NOT_SUPPORTED'"
         " || (%s && %s === 'DOWNLOAD_ADD')"
+        " || (newData.val() === 'BAD_INPUT' && newData.parent().child('action').val() === 'OPEN_APP')"
         " || (newData.val() === 'NOT_PERMITTED' && (%s === 'TAILSCALE' || %s === 'SYSTEM_UPDATE' || %s === 'MEDIA'"
         " || %s === 'SLEEP'))"
         " || (newData.val() === 'UPDATE_RUNNING' && (%s === 'SYSTEM_UPDATE' || %s === 'SLEEP' || %s === 'SHUTDOWN'"
@@ -171,6 +175,8 @@ def command_rules():
             "source": enum(("MAGNET", "URL", "TORRENT_FILE")),
             "media": enum(("PREVIOUS", "PLAY_PAUSE", "NEXT", "VOLUME")),
             "volume": whole("newData.val() >= 0 && newData.val() <= 100"),
+            # A bundle ID from /apps/latest (the agent opens only apps on its own list).
+            "app": leaf("newData.isString() && newData.val().matches(/^[A-Za-z0-9._-]{1,200}$/)"),
             "url": leaf(
                 "newData.isString() && newData.val().length <= 4096 && ((newData.parent().child('source').val() === 'MAGNET'"
                 " && newData.val().matches(/^magnet:[?][^ ]+$/)) || (newData.parent().child('source').val() === 'URL'"
@@ -261,6 +267,23 @@ def data_rules():
                         ".validate": "$mac.matches(/^([0-9A-F]{2}-){5}[0-9A-F]{2}$/) && newData.hasChildren(['ip', 'name'])",
                         "ip": leaf("newData.isString() && newData.val().matches(/^(\\d{1,3}\\.){3}\\d{1,3}$/)"),
                         "name": text(1, 60),
+                        **NO_OTHER,
+                    },
+                },
+                **NO_OTHER,
+            }),
+        },
+        # The apps the phone can open (OPEN_APP), with small PNG icons, written by the agent.
+        "apps": {
+            "latest": agent_report({
+                ".validate": "newData.hasChildren(['items', 'updatedAt'])",
+                "updatedAt": PAST,
+                "items": {
+                    "$app": {
+                        ".validate": "newData.hasChildren(['bundleId', 'name']) && $app.matches(/^[A-Za-z0-9_-]{1,200}$/)",
+                        "bundleId": leaf("newData.isString() && newData.val().matches(/^[A-Za-z0-9._-]{1,200}$/)"),
+                        "name": text(1, 100),
+                        "icon": leaf("newData.isString() && newData.val().length <= 30000"),
                         **NO_OTHER,
                     },
                 },

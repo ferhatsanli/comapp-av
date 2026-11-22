@@ -1,5 +1,11 @@
 package com.ferhatsanli.comapp
 
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.Image
+import android.util.Base64
+import android.graphics.BitmapFactory
 import android.content.Intent
 import android.content.Context
 import android.content.res.Configuration
@@ -183,6 +189,7 @@ private enum class CardId(val kind: CardKind, val capability: String? = null) {
     PING(CardKind.INTERACTIVE),
     SPEAK(CardKind.INTERACTIVE, "speak"),
     MEDIA(CardKind.INTERACTIVE, "media"),
+    APPS(CardKind.INTERACTIVE, "apps"),
     // Sleep, Restart and Shutdown in one card; each part hides when the computer can't do it.
     POWER_CONTROLS(CardKind.INTERACTIVE, "shutdown"),
     POWER_MODE(CardKind.INTERACTIVE, "powerMode"),
@@ -213,7 +220,7 @@ private enum class Category(
         "Commands",
         "Speak · Update server system",
         GlassColors.Blue,
-        listOf(CardId.SPEAK, CardId.MEDIA, CardId.SYSTEM_UPDATE),
+        listOf(CardId.SPEAK, CardId.MEDIA, CardId.APPS, CardId.SYSTEM_UPDATE),
         { tint -> drawCommandsIcon(tint) },
     ),
     POWER(
@@ -265,6 +272,7 @@ private sealed interface RightPaneView {
 
 /** Where the Speak language choice is kept on the phone. */
 private const val SPEECH_PREFS = "speech"
+private const val APPS_PREFS = "apps"
 private const val SPEECH_LANGUAGE_KEY = "language"
 
 /** How long to wait for the keyboard to slide in before scrolling the Speak field above it. */
@@ -273,6 +281,7 @@ private const val SPEAK_FIELD_SCROLL_DELAY_MILLIS = 300L
 private const val VOLUME_CONFIRM_TIMEOUT_MILLIS = 8_000L
 // How long the status light stays green or red before it fades out.
 private const val COMMAND_LIGHT_HOLD_MILLIS = 2_000L
+private const val APP_GRID_COLUMNS = 4
 // The Rules accept device names up to this long.
 private const val MAX_DEVICE_NAME_LENGTH = 60
 
@@ -452,6 +461,14 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val orderStore = remember { CardOrderStore(context) }
+    // Apps: what the computer can open, and what was opened lately (remembered per computer).
+    var serverApps by remember { mutableStateOf<List<ServerApp>?>(null) }
+    var appQuery by remember { mutableStateOf("") }
+    var showAllApps by remember { mutableStateOf(false) }
+    val appsPrefs = remember { context.getSharedPreferences(APPS_PREFS, Context.MODE_PRIVATE) }
+    var recentApps by remember(device.id) {
+        mutableStateOf(ServerApps.decode(appsPrefs.getString("recent.${device.id}", null)))
+    }
     // Speak: the language the laptop reads the text in, remembered on the phone.
     val speechPrefs = remember { context.getSharedPreferences(SPEECH_PREFS, Context.MODE_PRIVATE) }
     var speakLanguage by remember {
@@ -747,6 +764,30 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             commandRef.addValueEventListener(listener)
             onDispose { commandRef.removeEventListener(listener) }
         }
+    }
+
+    DisposableEffect(database) {
+        val appsRef = dataRef("apps/latest/items")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                serverApps = if (!snapshot.exists()) {
+                    null
+                } else {
+                    snapshot.children.mapNotNull { child ->
+                        val key = child.key ?: return@mapNotNull null
+                        val bundleId = child.child("bundleId").getValue(String::class.java) ?: return@mapNotNull null
+                        val name = child.child("name").getValue(String::class.java) ?: return@mapNotNull null
+                        ServerApp(key, bundleId, name, child.child("icon").getValue(String::class.java))
+                    }
+                }
+            }
+
+            override fun onCancelled(databaseError: DatabaseError) {
+                AppLog.warn("Apps", "Could not read the app list: ${databaseError.message}")
+            }
+        }
+        appsRef.addValueEventListener(listener)
+        onDispose { appsRef.removeEventListener(listener) }
     }
 
     DisposableEffect(database) {
@@ -1520,6 +1561,93 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
 
     // Media: previous / play-pause / next for whatever is playing on the computer, and its
     // output volume. The slider sends one VOLUME command when the finger lifts.
+    // Apps: a Launchpad-like grid of the computer's apps; tapping one opens it there.
+    val appsCard: @Composable () -> Unit = {
+        val palette = LocalGlassPalette.current
+        fun openApp(app: ServerApp) {
+            if (!canSend) return
+            activeButton = "app-${app.bundleId}"
+            recentApps = ServerApps.opened(recentApps, app.bundleId)
+            appsPrefs.edit().putString("recent.${device.id}", ServerApps.encode(recentApps)).apply()
+            AppLog.info("Apps", "Opening ${app.name}")
+            sendCommand(PingProtocol.OPEN_APP_ACTION, PingProtocol.openAppCommand(app.bundleId))
+        }
+
+        @Composable
+        fun appGrid(list: List<ServerApp>) {
+            list.chunked(APP_GRID_COLUMNS).forEach { row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    row.forEach { app ->
+                        AppTile(
+                            app = app,
+                            enabled = canSend,
+                            working = activeButton == "app-${app.bundleId}" && commandPending,
+                            onClick = { openApp(app) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    repeat(APP_GRID_COLUMNS - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
+
+        GlassCommandCard(
+            title = "Apps",
+            tag = PingProtocol.OPEN_APP_ACTION,
+            description = "Opens an app on the computer, or brings it to the front if it's already open.",
+            accent = GlassColors.Indigo,
+        ) {
+            val all = serverApps
+            if (all == null) {
+                Text(
+                    "The list appears once the computer has sent it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.inkMuted,
+                )
+            } else {
+                OutlinedTextField(
+                    value = appQuery,
+                    onValueChange = { appQuery = it.take(60) },
+                    placeholder = { Text("Search ${all.size} apps") },
+                    singleLine = true,
+                    shape = GlassFieldShape,
+                    colors = glassTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (appQuery.isBlank()) {
+                    val recent = ServerApps.recent(all, recentApps).take(APP_GRID_COLUMNS)
+                    if (recent.isNotEmpty()) {
+                        Text("Recent", style = MaterialTheme.typography.labelLarge, color = palette.inkMuted)
+                        appGrid(recent)
+                        Text("All apps", style = MaterialTheme.typography.labelLarge, color = palette.inkMuted)
+                    }
+                    val sorted = ServerApps.search(all, "")
+                    appGrid(if (showAllApps) sorted else sorted.take(ServerApps.COLLAPSED_COUNT))
+                    if (sorted.size > ServerApps.COLLAPSED_COUNT) {
+                        TextButton(onClick = { showAllApps = !showAllApps }) {
+                            Text(if (showAllApps) "Show fewer" else "Show all ${sorted.size} apps")
+                        }
+                    }
+                } else {
+                    val matches = ServerApps.search(all, appQuery)
+                    if (matches.isEmpty()) {
+                        Text("No app matches \"${appQuery.trim()}\".", style = MaterialTheme.typography.bodySmall,
+                            color = palette.inkMuted)
+                    } else {
+                        appGrid(matches)
+                    }
+                }
+            }
+            TextButton(
+                enabled = canSend,
+                onClick = {
+                    activeButton = "apps-refresh"
+                    sendCommand(PingProtocol.LIST_APPS_ACTION, PingProtocol.listAppsCommand())
+                },
+            ) { Text("Refresh the list") }
+        }
+    }
+
     val mediaCard: @Composable () -> Unit = {
         val sendMedia = { kind: String, button: String, volume: Int? ->
             if (canSend) {
@@ -2494,6 +2622,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             CardId.PING -> pingCard()
             CardId.SPEAK -> speakCard()
             CardId.MEDIA -> mediaCard()
+            CardId.APPS -> appsCard()
             CardId.POWER_CONTROLS -> powerControlsCard()
             CardId.POWER_MODE -> powerModeCard()
             CardId.SCAN -> scanCard()
@@ -3195,3 +3324,58 @@ private fun Modifier.horizontalEdgeFade(state: ScrollState, edgeSize: Dp = 28.dp
             )
         }
     }
+
+/** One app in the Apps card: its icon and name (up to two lines), Launchpad style. */
+@Composable
+private fun AppTile(
+    app: ServerApp,
+    enabled: Boolean,
+    working: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val palette = LocalGlassPalette.current
+    val icon = remember(app.key, app.icon) {
+        app.icon?.let { encoded ->
+            runCatching {
+                val bytes = Base64.decode(encoded, Base64.DEFAULT)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+            }.getOrNull()
+        }
+    }
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(enabled = enabled, onClickLabel = "Open ${app.name}", onClick = onClick)
+            .padding(vertical = 6.dp, horizontal = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+            if (icon != null) {
+                Image(icon, contentDescription = null, modifier = Modifier.fillMaxSize())
+            } else {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(palette.ink.copy(alpha = 0.10f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(app.name.take(1).uppercase(), style = MaterialTheme.typography.titleMedium)
+                }
+            }
+            if (working) {
+                CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = GlassColors.Orange)
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            app.name,
+            style = MaterialTheme.typography.labelSmall,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            color = if (enabled) palette.ink else palette.inkFaint,
+        )
+    }
+}
