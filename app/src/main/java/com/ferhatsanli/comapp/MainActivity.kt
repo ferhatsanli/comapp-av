@@ -3439,7 +3439,8 @@ internal fun AppTile(
                 CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = GlassColors.Orange)
             }
             // The red ✕, all at once on every tile: a short fade and pop, nothing more.
-            AnimatedVisibility(
+            // (Named in full: inside the tile's Column, Kotlin would pick ColumnScope's version.)
+            androidx.compose.animation.AnimatedVisibility(
                 visible = editing,
                 enter = fadeIn(tween(150)) + scaleIn(tween(150), initialScale = 0.5f),
                 exit = fadeOut(tween(120)) + scaleOut(tween(120), targetScale = 0.5f),
