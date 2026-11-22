@@ -899,7 +899,7 @@ try {
     const list = ref(piDb, `${DEV}/apps/latest`);
     const item = { bundleId: "com.apple.Safari", name: "Safari", icon: "iVBORw0KGgo=" };
     await assertSucceeds(set(list, { items: { com_apple_Safari: item }, updatedAt: serverTimestamp() }));
-    await assertFails(set(list, { items: { "com.apple.Safari": item }, updatedAt: serverTimestamp() }));
+    await assertFails(set(list, { items: { "com apple Safari": item }, updatedAt: serverTimestamp() }));
     await assertFails(set(list, { items: { com_apple_Safari: { ...item, path: "/Applications" } }, updatedAt: serverTimestamp() }));
     await assertFails(set(list, { items: { com_apple_Safari: { ...item, icon: "x".repeat(30001) } }, updatedAt: serverTimestamp() }));
     await assertFails(set(ref(androidDb, `${DEV}/apps/latest`), { items: { com_apple_Safari: item }, updatedAt: serverTimestamp() }));
