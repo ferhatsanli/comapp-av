@@ -36,4 +36,10 @@ class ServerAppsTest {
         assertEquals(listOf("a", "b"), ServerApps.decode(ServerApps.encode(listOf("a", "b"))))
         assertEquals(emptyList<String>(), ServerApps.decode(null))
     }
+
+    @Test
+    fun removingFromRecentKeepsTheRestInOrder() {
+        assertEquals(listOf("a", "c"), ServerApps.removed(listOf("a", "b", "c"), "b"))
+        assertEquals(listOf("a"), ServerApps.removed(listOf("a"), "missing"))
+    }
 }

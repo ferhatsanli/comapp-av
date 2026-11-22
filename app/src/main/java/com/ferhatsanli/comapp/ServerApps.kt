@@ -30,6 +30,9 @@ internal object ServerApps {
     fun opened(recent: List<String>, bundleId: String): List<String> =
         (listOf(bundleId) + recent.filter { it != bundleId }).take(MAX_RECENT)
 
+    /** [recent] without [bundleId] (removed by hand from the Recent row). */
+    fun removed(recent: List<String>, bundleId: String): List<String> = recent.filter { it != bundleId }
+
     /** The recently opened apps that are still installed, newest first. */
     fun recent(apps: List<ServerApp>, recent: List<String>): List<ServerApp> {
         val byId = apps.associateBy { it.bundleId }

@@ -14,8 +14,8 @@ android {
         applicationId = "com.ferhatsanli.comapp"
         minSdk = 33
         targetSdk = 36
-        versionCode = 37
-        versionName = "2.7.0"
+        versionCode = 38
+        versionName = "2.8.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -56,6 +56,7 @@ dependencies {
     implementation(libs.googleid)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.core)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)

@@ -1,5 +1,15 @@
 package com.ferhatsanli.comapp
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.foundation.layout.offset
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.layout.height
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.asImageBitmap
@@ -282,6 +292,8 @@ private const val VOLUME_CONFIRM_TIMEOUT_MILLIS = 8_000L
 // How long the status light stays green or red before it fades out.
 private const val COMMAND_LIGHT_HOLD_MILLIS = 2_000L
 private const val APP_GRID_COLUMNS = 4
+// How long a tile removed from Recent takes to fade out before the row closes up.
+private const val RECENT_REMOVE_MILLIS = 180L
 // The Rules accept device names up to this long.
 private const val MAX_DEVICE_NAME_LENGTH = 60
 
@@ -465,6 +477,9 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     var serverApps by remember { mutableStateOf<List<ServerApp>?>(null) }
     var appQuery by remember { mutableStateOf("") }
     var showAllApps by remember { mutableStateOf(false) }
+    // Editing the Recent row: each app gets a red ✕; a tapped one fades out, then leaves the list.
+    var editingRecent by remember { mutableStateOf(false) }
+    var removingRecent by remember { mutableStateOf(emptySet<String>()) }
     val appsPrefs = remember { context.getSharedPreferences(APPS_PREFS, Context.MODE_PRIVATE) }
     var recentApps by remember(device.id) {
         mutableStateOf(ServerApps.decode(appsPrefs.getString("recent.${device.id}", null)))
@@ -1559,8 +1574,6 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         }
     }
 
-    // Media: previous / play-pause / next for whatever is playing on the computer, and its
-    // output volume. The slider sends one VOLUME command when the finger lifts.
     // Apps: a Launchpad-like grid of the computer's apps; tapping one opens it there.
     val appsCard: @Composable () -> Unit = {
         val palette = LocalGlassPalette.current
@@ -1573,8 +1586,21 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             sendCommand(PingProtocol.OPEN_APP_ACTION, PingProtocol.openAppCommand(app.bundleId))
         }
 
+        fun removeRecent(app: ServerApp) {
+            if (app.bundleId in removingRecent) return
+            removingRecent = removingRecent + app.bundleId
+            scope.launch {
+                delay(RECENT_REMOVE_MILLIS) // let the tile fade out first
+                recentApps = ServerApps.removed(recentApps, app.bundleId)
+                appsPrefs.edit().putString("recent.${device.id}", ServerApps.encode(recentApps)).apply()
+                removingRecent = removingRecent - app.bundleId
+                if (recentApps.isEmpty()) editingRecent = false
+                AppLog.info("Apps", "Removed ${app.name} from Recent")
+            }
+        }
+
         @Composable
-        fun appGrid(list: List<ServerApp>) {
+        fun appGrid(list: List<ServerApp>, editable: Boolean = false) {
             list.chunked(APP_GRID_COLUMNS).forEach { row ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     row.forEach { app ->
@@ -1583,6 +1609,9 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                             enabled = canSend,
                             working = activeButton == "app-${app.bundleId}" && commandPending,
                             onClick = { openApp(app) },
+                            editing = editable && editingRecent,
+                            removing = editable && app.bundleId in removingRecent,
+                            onRemove = { removeRecent(app) },
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -1607,7 +1636,10 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             } else {
                 OutlinedTextField(
                     value = appQuery,
-                    onValueChange = { appQuery = it.take(60) },
+                    onValueChange = {
+                        appQuery = it.take(60)
+                        editingRecent = false // searching hides the Recent row
+                    },
                     placeholder = { Text("Search ${all.size} apps") },
                     singleLine = true,
                     shape = GlassFieldShape,
@@ -1617,8 +1649,30 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 if (appQuery.isBlank()) {
                     val recent = ServerApps.recent(all, recentApps).take(APP_GRID_COLUMNS)
                     if (recent.isNotEmpty()) {
-                        Text("Recent", style = MaterialTheme.typography.labelLarge, color = palette.inkMuted)
-                        appGrid(recent)
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "Recent",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = palette.inkMuted,
+                                modifier = Modifier.weight(1f),
+                            )
+                            // A small pencil at the card's right edge; it turns into a check mark
+                            // while editing.
+                            IconButton(
+                                onClick = { editingRecent = !editingRecent },
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .offset(x = 8.dp),
+                            ) {
+                                Icon(
+                                    if (editingRecent) Icons.Outlined.Check else Icons.Outlined.Edit,
+                                    contentDescription = if (editingRecent) "Done" else "Edit recent apps",
+                                    tint = palette.inkMuted,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                        appGrid(recent, editable = true)
                         Text("All apps", style = MaterialTheme.typography.labelLarge, color = palette.inkMuted)
                     }
                     val sorted = ServerApps.search(all, "")
@@ -1648,6 +1702,8 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         }
     }
 
+    // Media: previous / play-pause / next for whatever is playing on the computer, and its
+    // output volume. The slider sends one VOLUME command when the finger lifts.
     val mediaCard: @Composable () -> Unit = {
         val sendMedia = { kind: String, button: String, volume: Int? ->
             if (canSend) {
@@ -3327,14 +3383,23 @@ private fun Modifier.horizontalEdgeFade(state: ScrollState, edgeSize: Dp = 28.dp
 
 /** One app in the Apps card: its icon and name (up to two lines), Launchpad style. */
 @Composable
-private fun AppTile(
+internal fun AppTile(
     app: ServerApp,
     enabled: Boolean,
     working: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    editing: Boolean = false,
+    removing: Boolean = false,
+    onRemove: () -> Unit = {},
 ) {
     val palette = LocalGlassPalette.current
+    // Fading and shrinking only through graphicsLayer: no relayout while it animates.
+    val presence by animateFloatAsState(
+        if (removing) 0f else 1f,
+        tween(RECENT_REMOVE_MILLIS.toInt()),
+        label = "tilePresence",
+    )
     val icon = remember(app.key, app.icon) {
         app.icon?.let { encoded ->
             runCatching {
@@ -3345,8 +3410,14 @@ private fun AppTile(
     }
     Column(
         modifier = modifier
+            .graphicsLayer {
+                alpha = presence
+                scaleX = 0.7f + 0.3f * presence
+                scaleY = 0.7f + 0.3f * presence
+            }
             .clip(RoundedCornerShape(14.dp))
-            .clickable(enabled = enabled, onClickLabel = "Open ${app.name}", onClick = onClick)
+            // While editing, a tap doesn't open the app (only the ✕ does something).
+            .clickable(enabled = enabled && !editing, onClickLabel = "Open ${app.name}", onClick = onClick)
             .padding(vertical = 6.dp, horizontal = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -3366,6 +3437,38 @@ private fun AppTile(
             }
             if (working) {
                 CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = GlassColors.Orange)
+            }
+            // The red ✕, all at once on every tile: a short fade and pop, nothing more.
+            AnimatedVisibility(
+                visible = editing,
+                enter = fadeIn(tween(150)) + scaleIn(tween(150), initialScale = 0.5f),
+                exit = fadeOut(tween(120)) + scaleOut(tween(120), targetScale = 0.5f),
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .offset(x = (-8).dp, y = (-6).dp),
+            ) {
+                Box(
+                    Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .clickable(enabled = !removing, onClickLabel = "Remove ${app.name} from Recent", onClick = onRemove),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        Modifier
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(GlassColors.Red),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = "Remove ${app.name} from Recent",
+                            tint = Color.White,
+                            modifier = Modifier.size(12.dp),
+                        )
+                    }
+                }
             }
         }
         Spacer(Modifier.height(4.dp))
