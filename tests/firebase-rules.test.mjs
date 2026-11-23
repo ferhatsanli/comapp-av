@@ -834,6 +834,34 @@ try {
     }));
   });
 
+  await check("Update cancel: SYSTEM_UPDATE_CANCEL, its result and errors; the report carries log, outputAt, CANCELLED", async () => {
+    const cmd = (action, over) => ({ action, status: "PENDING", ...over });
+    await assertSucceeds(set(command(androidDb, "upd-cancel"), cmd("SYSTEM_UPDATE_CANCEL")));
+    await assertFails(set(command(androidDb, "upd-cancel-text"), cmd("SYSTEM_UPDATE_CANCEL", { text: "x" })));
+    await assertSucceeds(update(command(piDb, "upd-cancel"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertFails(update(command(piDb, "upd-cancel"), { status: "SUCCESS", result: "UPDATE_STARTED", processingAt: null }));
+    await assertSucceeds(update(command(piDb, "upd-cancel"), { status: "SUCCESS", result: "UPDATE_CANCELLED", processingAt: null }));
+
+    await assertSucceeds(set(command(androidDb, "upd-cancel-np"), cmd("SYSTEM_UPDATE_CANCEL")));
+    await assertSucceeds(update(command(piDb, "upd-cancel-np"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertFails(update(command(piDb, "upd-cancel-np"), { status: "FAILED", errorCode: "UPDATE_RUNNING", processingAt: null }));
+    await assertSucceeds(update(command(piDb, "upd-cancel-np"), { status: "FAILED", errorCode: "NOT_PERMITTED", processingAt: null }));
+
+    await assertSucceeds(set(ref(piDb, `${DEV}/system/update`), {
+      state: "RUNNING", phase: "APP_STORE", percent: 0, startedAt: Date.now(),
+      log: "== App Store ==\nWarning: no updates", outputAt: Date.now(),
+    }));
+    await assertFails(set(ref(piDb, `${DEV}/system/update`), {
+      state: "RUNNING", phase: "APP_STORE", percent: 0, log: "x".repeat(4001),
+    }));
+    await assertFails(set(ref(piDb, `${DEV}/system/update`), {
+      state: "RUNNING", phase: "APP_STORE", percent: 0, outputAt: Date.now() + 3_600_000,
+    }));
+    await assertSucceeds(set(ref(piDb, `${DEV}/system/update`), {
+      state: "FAILED", phase: "CANCELLED", percent: 0, error: "CANCELLED", finishedAt: serverTimestamp(),
+    }));
+  });
+
   await check("Phone presence: the user writes online/lastSeen, the agent only reads it", async () => {
     await assertSucceeds(set(ref(androidDb, `${DEV}/phone`), { online: true, lastSeen: serverTimestamp() }));
     await assertSucceeds(set(ref(androidDb, `${DEV}/phone`), { online: false, lastSeen: serverTimestamp() }));

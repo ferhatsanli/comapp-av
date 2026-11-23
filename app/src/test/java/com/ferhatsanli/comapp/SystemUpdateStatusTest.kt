@@ -48,4 +48,37 @@ class SystemUpdateStatusTest {
         val done = SystemUpdateStatus("DONE", "FINISHED", 100, 0, 0, 2, null, null, null, true, macos = true)
         assertEquals("Installed 2 updates. A restart is recommended.", done.describe())
     }
+
+    @Test
+    fun cancelledRunSaysSoAndIsNotAnError() {
+        val cancelled = SystemUpdateStatus(
+            "FAILED", "CANCELLED", 0, 0, 0, 0, null, null, "CANCELLED", null, macos = true,
+        )
+        assert(cancelled.cancelled)
+        assertEquals("The update was cancelled. What finished before stays installed.", cancelled.describe())
+    }
+
+    @Test
+    fun stallHintAppearsAfterFiveSilentMinutesWhileRunning() {
+        val start = 1_000_000L
+        val running = SystemUpdateStatus(
+            "RUNNING", "APP_STORE", 0, 0, 0, 0, start, null, null, null, macos = true,
+            log = "== App Store ==\n\nWarning: x", outputAt = start + 60_000,
+        )
+        assertEquals(null, running.stallHint(start + 4 * 60_000))
+        assertEquals("No new output for 30 min", running.stallHint(start + 31 * 60_000))
+        assertEquals(listOf("== App Store ==", "Warning: x"), running.logLines)
+        val noOutputYet = running.copy(outputAt = null)
+        assertEquals("No new output for 6 min", noOutputYet.stallHint(start + 6 * 60_000))
+        assertEquals(null, running.copy(state = "DONE").stallHint(start + 60 * 60_000))
+    }
+
+    @Test
+    fun newLinesFollowTheSlidingTail() {
+        assertEquals(listOf("a", "b"), SystemUpdateStatus.newLines(emptyList(), listOf("a", "b")))
+        assertEquals(listOf("c", "d"), SystemUpdateStatus.newLines(listOf("a", "b"), listOf("a", "b", "c", "d")))
+        assertEquals(listOf("d"), SystemUpdateStatus.newLines(listOf("a", "b", "c"), listOf("b", "c", "d")))
+        assertEquals(emptyList<String>(), SystemUpdateStatus.newLines(listOf("a", "b"), listOf("a", "b")))
+        assertEquals(listOf("x", "y"), SystemUpdateStatus.newLines(listOf("a", "b"), listOf("x", "y")))
+    }
 }

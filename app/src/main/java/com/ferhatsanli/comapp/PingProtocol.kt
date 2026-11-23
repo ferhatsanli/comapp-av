@@ -16,6 +16,7 @@ internal object PingProtocol {
     const val SYSTEM_INFO_ACTION = "SYSTEM_INFO"
     const val TAILSCALE_ACTION = "TAILSCALE"
     const val SYSTEM_UPDATE_ACTION = "SYSTEM_UPDATE"
+    const val SYSTEM_UPDATE_CANCEL_ACTION = "SYSTEM_UPDATE_CANCEL"
     const val MEDIA_ACTION = "MEDIA"
     const val MEDIA_PREVIOUS = "PREVIOUS"
     const val MEDIA_PLAY_PAUSE = "PLAY_PAUSE"
@@ -103,6 +104,12 @@ internal object PingProtocol {
         "status" to "PENDING",
     )
 
+    /** Stops a running system update on the server computer (macOS: the whole update job). */
+    fun systemUpdateCancelCommand(): Map<String, String> = mapOf(
+        "action" to SYSTEM_UPDATE_CANCEL_ACTION,
+        "status" to "PENDING",
+    )
+
     /**
      * A media key ([MEDIA_PREVIOUS], [MEDIA_PLAY_PAUSE], [MEDIA_NEXT]), or [MEDIA_VOLUME] with
      * [volume] 0-100 (clamped). The Rules want volume exactly on a VOLUME command.
@@ -128,6 +135,8 @@ internal object PingProtocol {
             SLEEP_ACTION ->
                 "A timed sleep needs the admin setup on the Mac: run install-macos-admin.sh on it once. " +
                     "Sleep until morning works without it."
+            SYSTEM_UPDATE_CANCEL_ACTION ->
+                "Cancelling needs the newer admin setup on the Mac: run install-macos-admin.sh on it again."
             else ->
                 "The server computer isn't set up for this yet. Run the admin setup on it once: " +
                     "install-macos-admin.sh on a Mac, install-remote-admin.sh on Linux."

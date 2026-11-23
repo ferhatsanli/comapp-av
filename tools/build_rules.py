@@ -40,6 +40,7 @@ ACTIONS = {
     "CAFFEINATE": "CAFFEINATE_SET",
     "OPEN_APP": "APP_OPENED",
     "LIST_APPS": "APPS_LISTED",
+    "SYSTEM_UPDATE_CANCEL": "UPDATE_CANCELLED",
 }
 # Fields the phone sets and the agent must leave alone.
 IMMUTABLE = ("action", "app", "text", "createdAt", "durationMinutes", "mode", "language", "state", "source", "url",
@@ -147,11 +148,11 @@ def command_rules():
         " || (%s && %s === 'DOWNLOAD_ADD')"
         " || (newData.val() === 'BAD_INPUT' && newData.parent().child('action').val() === 'OPEN_APP')"
         " || (newData.val() === 'NOT_PERMITTED' && (%s === 'TAILSCALE' || %s === 'SYSTEM_UPDATE' || %s === 'MEDIA'"
-        " || %s === 'SLEEP'))"
+        " || %s === 'SLEEP' || %s === 'SYSTEM_UPDATE_CANCEL'))"
         " || (newData.val() === 'UPDATE_RUNNING' && (%s === 'SYSTEM_UPDATE' || %s === 'SLEEP' || %s === 'SHUTDOWN'"
         " || %s === 'RESTART'))"
         " || (newData.val() === 'SLEEP_CYCLE_ACTIVE' && %s === 'SLEEP'))"
-        % (any_of("newData.val()", ("NOT_A_FILE", "NO_SPACE", "BAD_INPUT", "ENGINE_DOWN")), pa, pa, pa, pa, pa, pa, pa, pa, pa, pa)
+        % (any_of("newData.val()", ("NOT_A_FILE", "NO_SPACE", "BAD_INPUT", "ENGINE_DOWN")), pa, pa, pa, pa, pa, pa, pa, pa, pa, pa, pa)
     )
     return {
         # The user reads everything under /users/{uid} anyway (it is all theirs); the agent
@@ -374,7 +375,7 @@ def data_rules():
             "update": agent_report({
                 ".validate": "newData.hasChildren(['state', 'phase', 'percent'])",
                 "state": enum(("RUNNING", "DONE", "FAILED")),
-                "phase": enum(("APP_STORE", "REFRESHING", "DOWNLOADING", "INSTALLING", "VERIFYING", "FINISHED", "UP_TO_DATE")),
+                "phase": enum(("APP_STORE", "REFRESHING", "DOWNLOADING", "INSTALLING", "VERIFYING", "FINISHED", "UP_TO_DATE", "CANCELLED")),
                 "percent": whole("newData.val() >= 0 && newData.val() <= 100"),
                 "done": whole(),
                 "total": whole(),
@@ -383,6 +384,9 @@ def data_rules():
                 "finishedAt": PAST,
                 "error": leaf("newData.isString() && newData.val().length <= 40"),
                 "rebootRecommended": leaf("newData.isBoolean()"),
+                # The last lines of the update's output, and when it last printed anything.
+                "log": leaf("newData.isString() && newData.val().length <= 4000"),
+                "outputAt": PAST,
                 **NO_OTHER,
             }),
         },

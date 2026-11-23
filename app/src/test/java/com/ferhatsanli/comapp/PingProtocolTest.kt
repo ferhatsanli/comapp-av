@@ -48,6 +48,14 @@ class PingProtocolTest {
             ),
             PingProtocol.systemUpdateCommand(),
         )
+        assertEquals(
+            mapOf("action" to "SYSTEM_UPDATE_CANCEL", "status" to "PENDING"),
+            PingProtocol.systemUpdateCancelCommand(),
+        )
+        assert(
+            PingProtocol.describeError("NOT_PERMITTED", PingProtocol.SYSTEM_UPDATE_CANCEL_ACTION)!!
+                .contains("install-macos-admin.sh on it again"),
+        )
     }
 
     @Test

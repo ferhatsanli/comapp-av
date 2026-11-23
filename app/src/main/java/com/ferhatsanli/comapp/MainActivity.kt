@@ -463,6 +463,8 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     var sleepRequest by remember { mutableStateOf<SleepRequest?>(null) }
     var shutdownRequested by remember { mutableStateOf(false) }
     var restartRequested by remember { mutableStateOf(false) }
+    var cancelUpdateRequested by remember { mutableStateOf(false) }
+    var updateLogOpen by rememberSaveable { mutableStateOf(false) }
     // Caffeinate: what the switch was just set to, until the agent reports the real state.
     var caffeinateWanted by remember { mutableStateOf<Boolean?>(null) }
     var requestedPowerMode by remember { mutableStateOf<String?>(null) }
@@ -523,6 +525,10 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     var categoryOrder by remember {
         mutableStateOf(CardOrder.apply(savedOrders[CATEGORY_ORDER_KEY], Category.entries.toList()) { it.name })
     }
+    // Developer Mode (Settings) shows the Console, the Realtime Database and Latest command cards
+    // and the version under the computer's name; off, the app shows only what a user needs.
+    var developerMode by remember { mutableStateOf(settingsPrefs.getBoolean("developerMode", false)) }
+    val shownCategories = if (developerMode) categoryOrder else categoryOrder.filter { it != Category.CONSOLE }
     val cardOrders = remember {
         mutableStateMapOf<Category, List<CardId>>().apply {
             Category.entries.forEach { category ->
@@ -533,6 +539,15 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         }
     }
     val openProgress = remember { Animatable(if (openCategory != null) 1f else 0f) }
+    LaunchedEffect(developerMode) {
+        // Turned off while the Console was open: leave it for the first category still shown.
+        if (!developerMode && selectedCategory == Category.CONSOLE) selectedCategory = shownCategories.first()
+        if (!developerMode && openCategory == Category.CONSOLE) {
+            consoleTool = null
+            openProgress.snapTo(0f)
+            openCategory = null
+        }
+    }
     var sleepHours by rememberSaveable { mutableStateOf("0") }
     var sleepMinutes by rememberSaveable { mutableStateOf("30") }
     var networkDevices by remember { mutableStateOf<List<NetworkDevice>>(emptyList()) }
@@ -631,8 +646,8 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
 
     // Portrait: step to the next (+1) or previous (-1) tab, in the user's category order.
     fun switchTab(step: Int) {
-        val target = categoryOrder.indexOf(selectedCategory) + step
-        if (target in categoryOrder.indices) selectedCategory = categoryOrder[target]
+        val target = shownCategories.indexOf(selectedCategory) + step
+        if (target in shownCategories.indices) selectedCategory = shownCategories[target]
     }
 
     fun saveOrders() {
@@ -1094,8 +1109,17 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     error = snapshot.child("error").getValue(String::class.java),
                     rebootRecommended = snapshot.child("rebootRecommended").getValue(Boolean::class.java),
                     macos = device.platform == "macos",
+                    log = snapshot.child("log").getValue(String::class.java),
+                    outputAt = snapshot.child("outputAt").getValue(Long::class.java),
                 )
                 systemUpdate = status
+                // Console: the update's own output as it arrives, and every change of step.
+                if (previous == null || previous.phase != status.phase || previous.state != status.state) {
+                    if (status.running) AppLog.info("Update", status.describe())
+                }
+                for (line in SystemUpdateStatus.newLines(previous?.logLines.orEmpty(), status.logLines)) {
+                    AppLog.info("Update", line)
+                }
                 if (previous?.running == true && !status.running) {
                     AppLog.info("Update", status.describe())
                 }
@@ -1380,6 +1404,31 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         )
     }
 
+    if (cancelUpdateRequested) {
+        AlertDialog(
+            onDismissRequest = { cancelUpdateRequested = false },
+            title = { Text("Cancel the update?") },
+            text = {
+                Text(
+                    "The running step is asked to stop and gets 10 seconds, then whatever is left " +
+                        "is ended. Updates that already finished stay installed; macOS keeps what it " +
+                        "downloaded and finishes or rolls back an install it had begun itself.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    cancelUpdateRequested = false
+                    activeButton = "updateCancel"
+                    AppLog.info("Update", "Cancel requested")
+                    sendCommand(PingProtocol.SYSTEM_UPDATE_CANCEL_ACTION, PingProtocol.systemUpdateCancelCommand())
+                }) { Text("Cancel update", color = GlassColors.Red) }
+            },
+            dismissButton = {
+                TextButton(onClick = { cancelUpdateRequested = false }) { Text("Keep going") }
+            },
+        )
+    }
+
     // Shared pieces of content: extracted so portrait (one scrolling column) and landscape
     // (a controls strip + a separate full-height "monitor" pane) can arrange the exact same
     // cards differently without duplicating any of them.
@@ -1419,11 +1468,13 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     style = MaterialTheme.typography.bodySmall,
                     color = LocalGlassPalette.current.inkMuted,
                 )
-                Text(
-                    "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = LocalGlassPalette.current.inkFaint,
-                )
+                if (developerMode) {
+                    Text(
+                        "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = LocalGlassPalette.current.inkFaint,
+                    )
+                }
             }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1435,7 +1486,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         }
     }
 
-    val connectionCard: @Composable () -> Unit = {
+    val connectionCardContent: @Composable () -> Unit = {
         GlassCard(Modifier.fillMaxWidth(), accent = connectionColor(connected), cornerRadius = 22.dp) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
@@ -2173,7 +2224,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                         .padding(start = 12.dp, end = 12.dp, top = 0.dp, bottom = 2.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    categoryOrder.forEach { category ->
+                    shownCategories.forEach { category ->
                         GlassBottomNavItem(
                             label = category.label,
                             selected = selectedCategory == category,
@@ -2617,18 +2668,33 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             accent = GlassColors.Green,
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                GlassButton(
-                    text = "Update",
-                    accent = GlassColors.Green,
-                    enabled = canSend && status?.running != true,
-                    loading = sending && activeButton == "update",
-                    working = activeButton == "update" && commandPending,
-                    onClick = {
-                        activeButton = "update"
-                        AppLog.info("Update", "System update requested")
-                        sendCommand(PingProtocol.SYSTEM_UPDATE_ACTION, PingProtocol.systemUpdateCommand())
-                    },
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GlassButton(
+                        text = "Update",
+                        modifier = Modifier.weight(1f),
+                        accent = GlassColors.Green,
+                        enabled = canSend && status?.running != true,
+                        loading = sending && activeButton == "update",
+                        working = activeButton == "update" && commandPending,
+                        onClick = {
+                            activeButton = "update"
+                            AppLog.info("Update", "System update requested")
+                            sendCommand(PingProtocol.SYSTEM_UPDATE_ACTION, PingProtocol.systemUpdateCommand())
+                        },
+                    )
+                    if (status?.running == true && device.supports("updateCancel")) {
+                        GlassButton(
+                            text = "Cancel",
+                            modifier = Modifier.weight(1f),
+                            accent = GlassColors.Red,
+                            prominent = false,
+                            enabled = canSend,
+                            loading = sending && activeButton == "updateCancel",
+                            working = activeButton == "updateCancel" && commandPending,
+                            onClick = { cancelUpdateRequested = true },
+                        )
+                    }
+                }
                 GlassProgressBar(
                     fraction = status?.fraction ?: 0f,
                     accent = if (status?.state == "FAILED") GlassColors.Red else GlassColors.Green,
@@ -2642,8 +2708,47 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                         (status.finishedAt?.let { " · ${formatRelativeTime(it)}" } ?: "")
                 },
                 style = MaterialTheme.typography.bodySmall,
-                color = if (status?.state == "FAILED") GlassColors.Red else palette.inkMuted,
+                color = when {
+                    status?.cancelled == true -> palette.inkMuted
+                    status?.state == "FAILED" -> GlassColors.Red
+                    else -> palette.inkMuted
+                },
             )
+            status?.stallHint(nowMs)?.let { hint ->
+                Text(
+                    "$hint. It may be waiting for something on the Mac (for example the App Store " +
+                        "sign-in); the output below shows the last thing it did.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GlassColors.Amber,
+                )
+            }
+            val logLines = status?.logLines.orEmpty()
+            if (logLines.isNotEmpty()) {
+                Text(
+                    (if (updateLogOpen) "Hide output" else "Show output") + " (${logLines.size} lines)",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = GlassColors.Green,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .clickable { updateLogOpen = !updateLogOpen }
+                        .padding(vertical = 4.dp),
+                )
+                if (updateLogOpen) {
+                    Text(
+                        logLines.joinToString("\n"),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = palette.inkMuted,
+                    )
+                    status?.outputAt?.let {
+                        Text(
+                            "Last output ${formatRelativeTime(it)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = palette.inkMuted,
+                        )
+                    }
+                }
+            }
             if (status?.state == "DONE" && status.rebootRecommended == true && device.supports("restart")) {
                 GlassButton(
                     text = "Restart now",
@@ -2776,7 +2881,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         AnimatedContent(
             targetState = selectedCategory,
             transitionSpec = {
-                val forward = categoryOrder.indexOf(targetState) > categoryOrder.indexOf(initialState)
+                val forward = shownCategories.indexOf(targetState) > shownCategories.indexOf(initialState)
                 (
                     slideInHorizontally(initialOffsetX = { width -> if (forward) width else -width }) +
                         fadeIn()
@@ -2945,11 +3050,13 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 )
                 reorderHint()
                 ReorderableColumn(
-                    items = categoryOrder,
+                    items = shownCategories,
                     itemKey = { it },
                     enabled = reordering,
                     onMove = { from, to ->
-                        categoryOrder = categoryOrder.toMutableList().apply { add(to, removeAt(from)) }
+                        // Hidden categories keep their place at the end of the saved order.
+                        val moved = shownCategories.toMutableList().apply { add(to, removeAt(from)) }
+                        categoryOrder = moved + categoryOrder.filter { it !in moved }
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) { category ->
@@ -3115,7 +3222,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         }
     }
 
-    val latestCommandCard: @Composable () -> Unit = {
+    val latestCommandCardContent: @Composable () -> Unit = {
         if (commandId != null) {
             GlassCard(Modifier.fillMaxWidth(), accent = statusColor(commandStatus), cornerRadius = 22.dp) {
                 Text(
@@ -3150,6 +3257,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                                 PingProtocol.SYSTEM_INFO_ACTION -> "System info refreshed."
                                 PingProtocol.TAILSCALE_ACTION -> "Tailscale switched."
                                 PingProtocol.SYSTEM_UPDATE_ACTION -> "Update started - follow it on the Update server system card."
+                                PingProtocol.SYSTEM_UPDATE_CANCEL_ACTION -> "Update cancelled."
                                 DownloadProtocol.ACTION -> "Download started on the server computer - follow it under Downloads."
                                 else -> "PONG received from the agent."
                             },
@@ -3159,6 +3267,10 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             }
         }
     }
+
+    // Developer Mode only (Settings).
+    val connectionCard: @Composable () -> Unit = { if (developerMode) connectionCardContent() }
+    val latestCommandCard: @Composable () -> Unit = { if (developerMode) latestCommandCardContent() }
 
     val errorText: @Composable () -> Unit = {
         if (error != null) {
@@ -3339,8 +3451,8 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                                     change.consume()
                                     swipeTracker.addPosition(change.uptimeMillis, change.position)
                                     swipeDrag += dragAmount
-                                    val index = categoryOrder.indexOf(selectedCategory)
-                                    val hasNeighbour = if (swipeDrag < 0f) index < categoryOrder.lastIndex else index > 0
+                                    val index = shownCategories.indexOf(selectedCategory)
+                                    val hasNeighbour = if (swipeDrag < 0f) index < shownCategories.lastIndex else index > 0
                                     val follow = if (hasNeighbour) TAB_SWIPE_FOLLOW else TAB_SWIPE_FOLLOW_AT_EDGE
                                     val offset = swipeDrag * follow
                                     scope.launch { tabSwipeOffset.snapTo(offset) }
@@ -3389,6 +3501,12 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 appVersion = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
                 computerName = device.name,
                 serverVersion = device.agentVersion,
+                developerMode = developerMode,
+                onDeveloperMode = { on ->
+                    developerMode = on
+                    settingsPrefs.edit().putBoolean("developerMode", on).apply()
+                    AppLog.info("Settings", "Developer Mode " + if (on) "on" else "off")
+                },
             ),
         )
     }

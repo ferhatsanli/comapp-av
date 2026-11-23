@@ -54,6 +54,7 @@ import com.ferhatsanli.comapp.ui.glass.GlassCard
 import com.ferhatsanli.comapp.ui.glass.GlassColors
 import com.ferhatsanli.comapp.ui.glass.GlassIconAction
 import com.ferhatsanli.comapp.ui.glass.GlassSectionHeader
+import com.ferhatsanli.comapp.ui.glass.GlassSwitchRow
 import com.ferhatsanli.comapp.ui.glass.GlassTextField
 import com.ferhatsanli.comapp.ui.glass.LocalGlassPalette
 
@@ -110,6 +111,8 @@ internal class SettingsModel(
     val appVersion: String,
     val computerName: String,
     val serverVersion: String?,
+    val developerMode: Boolean = false,
+    val onDeveloperMode: (Boolean) -> Unit = {},
 )
 
 /** Settings, sliding up from under the bottom bar over the whole screen. */
@@ -174,6 +177,7 @@ internal fun SettingsSheet(visible: Boolean, onClose: () -> Unit, model: Setting
                 ) {
                     AppsSettings(model)
                     DeviceNameSettings(model)
+                    DeveloperSettings(model)
                     AboutSettings(model)
                 }
             }
@@ -270,6 +274,19 @@ private fun DeviceNameSettings(model: SettingsModel) {
             },
         )
         outcome?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = palette.inkMuted) }
+    }
+}
+
+@Composable
+private fun DeveloperSettings(model: SettingsModel) {
+    GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Amber, cornerRadius = 22.dp) {
+        GlassSwitchRow(
+            title = "Developer Mode",
+            subtitle = "Shows the Console, the Realtime Database and Latest command cards, and the app version.",
+            checked = model.developerMode,
+            onCheckedChange = model.onDeveloperMode,
+            accent = GlassColors.Amber,
+        )
     }
 }
 

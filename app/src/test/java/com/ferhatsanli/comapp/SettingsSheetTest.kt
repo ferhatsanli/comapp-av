@@ -6,6 +6,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -29,6 +32,7 @@ class SettingsSheetTest {
     fun rowsStepperAndImportWork() {
         var rows by mutableIntStateOf(2)
         var open by mutableStateOf(true)
+        var developer by mutableStateOf(false)
         var imported: Map<String, String>? = null
         rule.setContent {
             SettingsSheet(
@@ -45,6 +49,8 @@ class SettingsSheetTest {
                     appVersion = "v2.9.0 (39)",
                     computerName = "Ferhat-MacBook",
                     serverVersion = "2.6.1",
+                    developerMode = developer,
+                    onDeveloperMode = { developer = it },
                 ),
             )
         }
@@ -60,6 +66,11 @@ class SettingsSheetTest {
         rule.onNodeWithText("Import 2 names").performScrollTo().assertIsEnabled().performClick()
         assertEquals(mapOf("48-D3-43-4A-1D-60" to "JVD37-Modem", "B8-27-EB-75-27-A0" to "RPi"), imported)
         rule.onNodeWithText("Saved 2 names.").assertExists()
+
+        rule.onNodeWithText("Developer Mode").performScrollTo()
+        rule.onNode(isToggleable()).assertIsOff().performClick()
+        assertEquals(true, developer)
+        rule.onNode(isToggleable()).assertIsOn()
 
         rule.onNodeWithContentDescription("Close settings").performClick()
         rule.mainClock.advanceTimeBy(500)

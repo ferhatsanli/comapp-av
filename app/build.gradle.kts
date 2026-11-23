@@ -14,8 +14,8 @@ android {
         applicationId = "com.ferhatsanli.comapp"
         minSdk = 33
         targetSdk = 36
-        versionCode = 39
-        versionName = "2.9.0"
+        versionCode = 40
+        versionName = "2.10.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
