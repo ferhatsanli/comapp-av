@@ -1117,8 +1117,11 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 if (previous == null || previous.phase != status.phase || previous.state != status.state) {
                     if (status.running) AppLog.info("Update", status.describe())
                 }
-                for (line in SystemUpdateStatus.newLines(previous?.logLines.orEmpty(), status.logLines)) {
-                    AppLog.info("Update", line)
+                // An old, finished run's output stays on its card instead of filling the Console at start.
+                if (previous != null || status.running) {
+                    for (line in SystemUpdateStatus.newLines(previous?.logLines.orEmpty(), status.logLines)) {
+                        AppLog.info("Update", line)
+                    }
                 }
                 if (previous?.running == true && !status.running) {
                     AppLog.info("Update", status.describe())
