@@ -41,7 +41,10 @@ android {
         unitTests.isIncludeAndroidResources = true
         unitTests.all { test ->
             // List every test in the CI log, so a skipped test can't pass unnoticed.
-            test.testLogging { events("passed", "skipped", "failed") }
+            test.testLogging {
+                events("passed", "skipped", "failed")
+                exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+            }
         }
     }
 }
