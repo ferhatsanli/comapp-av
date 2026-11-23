@@ -1,5 +1,13 @@
 package com.ferhatsanli.comapp
 
+import com.ferhatsanli.comapp.ui.glass.GlassSectionHeader
+import com.ferhatsanli.comapp.ui.glass.GlassIconAction
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyColumn
+import com.ferhatsanli.comapp.ui.glass.GlassTextField
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.scaleIn
@@ -283,6 +291,10 @@ private sealed interface RightPaneView {
 /** Where the Speak language choice is kept on the phone. */
 private const val SPEECH_PREFS = "speech"
 private const val APPS_PREFS = "apps"
+private const val SETTINGS_PREFS = "settings"
+
+/** The two editable rows of the Apps card. */
+internal enum class AppSection { FAVORITES, RECENT }
 private const val SPEECH_LANGUAGE_KEY = "language"
 
 /** How long to wait for the keyboard to slide in before scrolling the Speak field above it. */
@@ -477,12 +489,23 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     var serverApps by remember { mutableStateOf<List<ServerApp>?>(null) }
     var appQuery by remember { mutableStateOf("") }
     var showAllApps by remember { mutableStateOf(false) }
-    // Editing the Recent row: each app gets a red ✕; a tapped one fades out, then leaves the list.
-    var editingRecent by remember { mutableStateOf(false) }
-    var removingRecent by remember { mutableStateOf(emptySet<String>()) }
+    // Editing Favorites or Recent: each app gets a red ✕; a tapped one fades out, then leaves.
+    var editingSection by remember { mutableStateOf<AppSection?>(null) }
+    var removingApps by remember { mutableStateOf(emptySet<String>()) } // "SECTION:bundleId"
+    // Favorites: the user's own deck of apps for this computer, and how many rows it has.
+    val settingsPrefs = remember { context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE) }
+    var favoriteRows by remember {
+        mutableStateOf(FavoriteApps.clampRows(settingsPrefs.getInt("favoriteRows", FavoriteApps.DEFAULT_ROWS)))
+    }
+    var pickingFavorite by remember { mutableStateOf(false) }
+    // Settings, which slides up from under the bottom bar.
+    var settingsOpen by remember { mutableStateOf(false) }
     val appsPrefs = remember { context.getSharedPreferences(APPS_PREFS, Context.MODE_PRIVATE) }
     var recentApps by remember(device.id) {
         mutableStateOf(ServerApps.decode(appsPrefs.getString("recent.${device.id}", null)))
+    }
+    var favoriteApps by remember(device.id) {
+        mutableStateOf(ServerApps.decode(appsPrefs.getString("favorites.${device.id}", null), limit = FavoriteApps.MAX_ROWS * APPS_PER_ROW))
     }
     // Speak: the language the laptop reads the text in, remembered on the phone.
     val speechPrefs = remember { context.getSharedPreferences(SPEECH_PREFS, Context.MODE_PRIVATE) }
@@ -1269,6 +1292,20 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         )
     }
 
+    if (pickingFavorite) {
+        FavoritePicker(
+            apps = serverApps.orEmpty(),
+            favorites = favoriteApps,
+            onPick = { app ->
+                pickingFavorite = false
+                favoriteApps = FavoriteApps.toggle(favoriteApps, app.bundleId, favoriteRows * APPS_PER_ROW).first
+                appsPrefs.edit().putString("favorites.${device.id}", ServerApps.encode(favoriteApps)).apply()
+                AppLog.info("Apps", "Added ${app.name} to Favorites")
+            },
+            onDismiss = { pickingFavorite = false },
+        )
+    }
+
     renaming?.let { device ->
         var newName by remember(device.mac) { mutableStateOf(deviceNames[device.mac].orEmpty()) }
         val nameRef = dataRef("network/aliases/${device.mac}")
@@ -1293,13 +1330,11 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                         style = MaterialTheme.typography.bodySmall,
                         color = LocalGlassPalette.current.inkMuted,
                     )
-                    OutlinedTextField(
+                    GlassTextField(
                         value = newName,
                         onValueChange = { value -> if (value.length <= MAX_DEVICE_NAME_LENGTH) newName = value.replace('\n', ' ') },
-                        label = { Text("Name") },
+                        label = "Name",
                         singleLine = true,
-                        shape = GlassFieldShape,
-                        colors = glassTextFieldColors(),
                     )
                 }
             },
@@ -1514,45 +1549,17 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 }
             },
         ) {
-            OutlinedTextField(
+            GlassTextField(
                 value = speakText,
                 onValueChange = { value ->
                     // One line only: a pasted line break becomes a space.
                     val line = value.replace('\n', ' ').replace('\r', ' ')
                     if (line.length <= PingProtocol.MAX_SPEAK_LENGTH) speakText = line
                 },
-                label = { Text(if (english) "Text to speak (English)" else "Text to speak (Türkçe)") },
-                // A bare "x" at the end of the field clears it - no background, no ring.
-                trailingIcon = if (speakText.isEmpty()) {
-                    null
-                } else {
-                    {
-                        val tint = LocalGlassPalette.current.inkMuted
-                        Box(
-                            Modifier
-                                .size(40.dp)
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                    role = Role.Button,
-                                    onClickLabel = "Clear the text",
-                                ) { speakText = "" }
-                                .semantics { contentDescription = "Clear the text" },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Canvas(Modifier.size(12.dp)) {
-                                val stroke = 1.8.dp.toPx()
-                                drawLine(tint, Offset.Zero, Offset(size.width, size.height), stroke, StrokeCap.Round)
-                                drawLine(tint, Offset(size.width, 0f), Offset(0f, size.height), stroke, StrokeCap.Round)
-                            }
-                        }
-                    }
-                },
+                label = if (english) "Text to speak (English)" else "Text to speak (Türkçe)",
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { sendSpeak() }),
-                shape = GlassFieldShape,
-                colors = glassTextFieldColors(),
                 modifier = Modifier
                     .fillMaxWidth()
                     .bringIntoViewRequester(speakField)
@@ -1586,34 +1593,68 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             sendCommand(PingProtocol.OPEN_APP_ACTION, PingProtocol.openAppCommand(app.bundleId))
         }
 
-        fun removeRecent(app: ServerApp) {
-            if (app.bundleId in removingRecent) return
-            removingRecent = removingRecent + app.bundleId
+        fun saveFavorites() {
+            appsPrefs.edit().putString("favorites.${device.id}", ServerApps.encode(favoriteApps)).apply()
+        }
+
+        fun removeFrom(section: AppSection, app: ServerApp) {
+            val key = "$section:${app.bundleId}"
+            if (key in removingApps) return
+            removingApps = removingApps + key
             scope.launch {
                 delay(RECENT_REMOVE_MILLIS) // let the tile fade out first
-                recentApps = ServerApps.removed(recentApps, app.bundleId)
-                appsPrefs.edit().putString("recent.${device.id}", ServerApps.encode(recentApps)).apply()
-                removingRecent = removingRecent - app.bundleId
-                if (recentApps.isEmpty()) editingRecent = false
-                AppLog.info("Apps", "Removed ${app.name} from Recent")
+                when (section) {
+                    AppSection.RECENT -> {
+                        recentApps = ServerApps.removed(recentApps, app.bundleId)
+                        appsPrefs.edit().putString("recent.${device.id}", ServerApps.encode(recentApps)).apply()
+                        if (recentApps.isEmpty()) editingSection = null
+                    }
+                    AppSection.FAVORITES -> {
+                        favoriteApps = ServerApps.removed(favoriteApps, app.bundleId)
+                        saveFavorites()
+                        if (favoriteApps.isEmpty()) editingSection = null
+                    }
+                }
+                removingApps = removingApps - key
+                AppLog.info("Apps", "Removed ${app.name} from ${section.name.lowercase().replaceFirstChar { it.uppercase() }}")
             }
         }
 
+        // Press and hold any app to pin it to Favorites (or unpin it).
+        fun toggleFavorite(app: ServerApp) {
+            val (updated, change) = FavoriteApps.toggle(favoriteApps, app.bundleId, favoriteRows * APPS_PER_ROW)
+            favoriteApps = updated
+            saveFavorites()
+            val message = when (change) {
+                FavoriteApps.Change.ADDED -> "${app.name} added to Favorites"
+                FavoriteApps.Change.REMOVED -> "${app.name} removed from Favorites"
+                FavoriteApps.Change.FULL -> "Favorites are full. Add a row in Settings (swipe up on the bottom bar)."
+            }
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+
         @Composable
-        fun appGrid(list: List<ServerApp>, editable: Boolean = false) {
-            list.chunked(APP_GRID_COLUMNS).forEach { row ->
+        fun appGrid(list: List<ServerApp>, section: AppSection? = null, addSlots: Int = 0) {
+            val cells: List<ServerApp?> = list + List(addSlots) { null } // null: an empty "+" slot
+            cells.chunked(APP_GRID_COLUMNS).forEach { row ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     row.forEach { app ->
-                        AppTile(
-                            app = app,
-                            enabled = canSend,
-                            working = activeButton == "app-${app.bundleId}" && commandPending,
-                            onClick = { openApp(app) },
-                            editing = editable && editingRecent,
-                            removing = editable && app.bundleId in removingRecent,
-                            onRemove = { removeRecent(app) },
-                            modifier = Modifier.weight(1f),
-                        )
+                        if (app == null) {
+                            AddAppSlot(onClick = { pickingFavorite = true }, modifier = Modifier.weight(1f))
+                        } else {
+                            AppTile(
+                                app = app,
+                                enabled = canSend,
+                                working = activeButton == "app-${app.bundleId}" && commandPending,
+                                onClick = { openApp(app) },
+                                onLongClick = { toggleFavorite(app) },
+                                longClickLabel = if (app.bundleId in favoriteApps) "Remove from Favorites" else "Add to Favorites",
+                                editing = section != null && editingSection == section,
+                                removing = section != null && "$section:${app.bundleId}" in removingApps,
+                                onRemove = { section?.let { removeFrom(it, app) } },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
                     }
                     repeat(APP_GRID_COLUMNS - row.size) { Spacer(Modifier.weight(1f)) }
                 }
@@ -1634,47 +1675,57 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     color = palette.inkMuted,
                 )
             } else {
-                OutlinedTextField(
+                GlassTextField(
                     value = appQuery,
                     onValueChange = {
                         appQuery = it.take(60)
-                        editingRecent = false // searching hides the Recent row
+                        editingSection = null // searching hides Favorites and Recent
                     },
-                    placeholder = { Text("Search ${all.size} apps") },
+                    placeholder = "Search ${all.size} apps",
                     singleLine = true,
-                    shape = GlassFieldShape,
-                    colors = glassTextFieldColors(),
                     modifier = Modifier.fillMaxWidth(),
+                    clearDescription = "Clear the search",
                 )
                 if (appQuery.isBlank()) {
+                    // A pencil at the card's right edge edits a row; it turns into a check mark.
+                    @Composable
+                    fun editAction(section: AppSection, what: String) {
+                        val editing = editingSection == section
+                        GlassIconAction(
+                            if (editing) Icons.Outlined.Check else Icons.Outlined.Edit,
+                            if (editing) "Done" else "Edit $what",
+                            onClick = { editingSection = if (editing) null else section },
+                        )
+                    }
+
+                    // Favorites: a fixed deck of rows x 4; empty places are "+" slots.
+                    val capacity = favoriteRows * APPS_PER_ROW
+                    val favorites = FavoriteApps.shown(all, favoriteApps)
+                    val deck = favorites.take(capacity)
+                    GlassSectionHeader("Favorites", action = if (deck.isNotEmpty()) {
+                        { editAction(AppSection.FAVORITES, "favorites") }
+                    } else {
+                        null
+                    })
+                    appGrid(
+                        deck,
+                        section = AppSection.FAVORITES,
+                        addSlots = if (editingSection == AppSection.FAVORITES) 0 else capacity - deck.size,
+                    )
+                    if (favorites.size > capacity) {
+                        Text(
+                            "${favorites.size - capacity} more don't fit. Add a row in Settings (swipe up on the bottom bar).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = palette.inkMuted,
+                        )
+                    }
+
                     val recent = ServerApps.recent(all, recentApps).take(APP_GRID_COLUMNS)
                     if (recent.isNotEmpty()) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                "Recent",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = palette.inkMuted,
-                                modifier = Modifier.weight(1f),
-                            )
-                            // A small pencil at the card's right edge; it turns into a check mark
-                            // while editing.
-                            IconButton(
-                                onClick = { editingRecent = !editingRecent },
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .offset(x = 8.dp),
-                            ) {
-                                Icon(
-                                    if (editingRecent) Icons.Outlined.Check else Icons.Outlined.Edit,
-                                    contentDescription = if (editingRecent) "Done" else "Edit recent apps",
-                                    tint = palette.inkMuted,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
-                        }
-                        appGrid(recent, editable = true)
-                        Text("All apps", style = MaterialTheme.typography.labelLarge, color = palette.inkMuted)
+                        GlassSectionHeader("Recent", action = { editAction(AppSection.RECENT, "recent apps") })
+                        appGrid(recent, section = AppSection.RECENT)
                     }
+                    GlassSectionHeader("All apps")
                     val sorted = ServerApps.search(all, "")
                     appGrid(if (showAllApps) sorted else sorted.take(ServerApps.COLLAPSED_COUNT))
                     if (sorted.size > ServerApps.COLLAPSED_COUNT) {
@@ -1692,6 +1743,11 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     }
                 }
             }
+            Text(
+                "Press and hold an app to add it to Favorites or take it off.",
+                style = MaterialTheme.typography.labelSmall,
+                color = palette.inkFaint,
+            )
             TextButton(
                 enabled = canSend,
                 onClick = {
@@ -1845,29 +1901,27 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(
+                    GlassTextField(
                         value = sleepHours,
                         onValueChange = { value ->
                             if (value.length <= 2 && value.all { it.isDigit() }) sleepHours = value
                         },
-                        label = { Text("Hours") },
+                        label = "Hours",
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
-                        shape = GlassFieldShape,
-                        colors = glassTextFieldColors(),
                         modifier = Modifier.weight(1f),
+                        clearable = false,
                     )
-                    OutlinedTextField(
+                    GlassTextField(
                         value = sleepMinutes,
                         onValueChange = { value ->
                             if (value.length <= 2 && value.all { it.isDigit() }) sleepMinutes = value
                         },
-                        label = { Text("Minutes") },
+                        label = "Minutes",
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
-                        shape = GlassFieldShape,
-                        colors = glassTextFieldColors(),
                         modifier = Modifier.weight(1f),
+                        clearable = false,
                     )
                 }
                 GlassButton(
@@ -2104,17 +2158,19 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
 
     // Portrait: a fixed bottom navigation bar, pinned outside the scrolling content.
     val bottomNav: @Composable () -> Unit = {
-        GlassNavSurface(Modifier.fillMaxWidth()) {
+        // Swiping up on the bar (or tapping its handle) brings Settings up from underneath.
+        GlassNavSurface(Modifier.fillMaxWidth().swipeUpToOpen { settingsOpen = true }) {
             // The glass runs on behind the system navigation bar; the tabs and the light stay above it.
             Column(
                 Modifier
                     .fillMaxWidth()
                     .windowInsetsPadding(WindowInsets.navigationBars),
             ) {
+                SettingsHandle { settingsOpen = true }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 2.dp),
+                        .padding(start = 12.dp, end = 12.dp, top = 0.dp, bottom = 2.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     categoryOrder.forEach { category ->
@@ -2362,15 +2418,14 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     torrentPicker.launch(arrayOf("application/x-bittorrent", "application/octet-stream"))
                 },
             )
-            OutlinedTextField(
+            GlassTextField(
                 value = downloadLink,
                 onValueChange = { if (it.length <= DownloadProtocol.MAX_URL_LENGTH) downloadLink = it },
-                label = { Text("Magnet or file link") },
+                label = "Magnet or file link",
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                shape = GlassFieldShape,
-                colors = glassTextFieldColors(),
                 modifier = Modifier.fillMaxWidth(),
+                clearDescription = "Clear the link",
             )
             if (downloadLink.isNotBlank() && linkRequest == null) {
                 Text(
@@ -3141,159 +3196,201 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         )
     }
 
-    Scaffold(
-        containerColor = Color.Transparent,
-        contentColor = LocalGlassPalette.current.ink,
-        bottomBar = {
-            if (isLandscape) {
-                CommandStatusLight(commandLight, Modifier.windowInsetsPadding(WindowInsets.navigationBars))
-            } else {
-                bottomNav()
-            }
-        },
-    ) { padding ->
-        PullToRefreshBox(
-            isRefreshing = refreshing,
-            onRefresh = { refreshConnection() },
-            state = pullState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                // The keyboard isn't part of the Scaffold's padding (the app draws edge to edge),
-                // so the content shrinks above it here - otherwise a text field near the bottom
-                // ends up hidden behind the keyboard.
-                .consumeWindowInsets(padding)
-                .imePadding(),
-            indicator = {
-                PullToRefreshDefaults.Indicator(
-                    state = pullState,
-                    isRefreshing = refreshing,
-                    modifier = Modifier.align(Alignment.TopCenter),
-                    containerColor = LocalGlassPalette.current.baseMid,
-                    color = GlassColors.Blue,
-                )
-            },
-        ) {
-            if (isLandscape) {
-                // Left: the folder-style category navigator (categories -> cards). Right: a
-                // full-height "monitor" pane with everything that's read rather than tapped.
-                // Each pane scrolls on its own.
-                Row(Modifier.fillMaxSize()) {
-                    landscapeNavigator()
-                    verticalDivider()
-                    val infoScroll = rememberScrollState()
-                    // A Console tool, or an info card of the open category, while one is open.
-                    val openCategoryCards = openCategory?.let { cardOrders[it] ?: it.cards }.orEmpty()
-                    val rightPaneTool: RightPaneView? = when {
-                        openCategory == Category.CONSOLE && consoleTool != null -> RightPaneView.Tool(consoleTool!!)
-                        openInfoCard != null && openInfoCard in openCategoryCards -> RightPaneView.Info(openInfoCard!!)
-                        else -> null
+    // A Box, so Settings can slide over the whole screen.
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = Color.Transparent,
+            contentColor = LocalGlassPalette.current.ink,
+            bottomBar = {
+                if (isLandscape) {
+                    // No tab bar in landscape: the handle sits over the light at the bottom edge.
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .swipeUpToOpen { settingsOpen = true }
+                            .windowInsetsPadding(WindowInsets.navigationBars),
+                    ) {
+                        SettingsHandle { settingsOpen = true }
+                        CommandStatusLight(commandLight)
                     }
-                    LaunchedEffect(rightPaneTool) { infoScroll.scrollTo(0) }
+                } else {
+                    bottomNav()
+                }
+            },
+        ) { padding ->
+            PullToRefreshBox(
+                isRefreshing = refreshing,
+                onRefresh = { refreshConnection() },
+                state = pullState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    // The keyboard isn't part of the Scaffold's padding (the app draws edge to edge),
+                    // so the content shrinks above it here - otherwise a text field near the bottom
+                    // ends up hidden behind the keyboard.
+                    .consumeWindowInsets(padding)
+                    .imePadding(),
+                indicator = {
+                    PullToRefreshDefaults.Indicator(
+                        state = pullState,
+                        isRefreshing = refreshing,
+                        modifier = Modifier.align(Alignment.TopCenter),
+                        containerColor = LocalGlassPalette.current.baseMid,
+                        color = GlassColors.Blue,
+                    )
+                },
+            ) {
+                if (isLandscape) {
+                    // Left: the folder-style category navigator (categories -> cards). Right: a
+                    // full-height "monitor" pane with everything that's read rather than tapped.
+                    // Each pane scrolls on its own.
+                    Row(Modifier.fillMaxSize()) {
+                        landscapeNavigator()
+                        verticalDivider()
+                        val infoScroll = rememberScrollState()
+                        // A Console tool, or an info card of the open category, while one is open.
+                        val openCategoryCards = openCategory?.let { cardOrders[it] ?: it.cards }.orEmpty()
+                        val rightPaneTool: RightPaneView? = when {
+                            openCategory == Category.CONSOLE && consoleTool != null -> RightPaneView.Tool(consoleTool!!)
+                            openInfoCard != null && openInfoCard in openCategoryCards -> RightPaneView.Info(openInfoCard!!)
+                            else -> null
+                        }
+                        LaunchedEffect(rightPaneTool) { infoScroll.scrollTo(0) }
+                        Column(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .weight(1f)
+                                .verticalEdgeFade(infoScroll)
+                                .verticalScroll(infoScroll)
+                                .padding(horizontal = 16.dp, vertical = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            // Always first, whatever opens below it: is the database reachable?
+                            connectionCard()
+                            AnimatedContent(
+                                targetState = rightPaneTool,
+                                transitionSpec = {
+                                    fadeIn(tween(durationMillis = 220)) togetherWith fadeOut(tween(durationMillis = 150))
+                                },
+                                label = "rightPane",
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { tool ->
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                                ) {
+                                    val infoCards: @Composable () -> Unit = {
+                                        systemInfoCard()
+                                        latestCommandCard()
+                                        errorText()
+                                    }
+                                    when (tool) {
+                                        is RightPaneView.Tool -> when (tool.tool) {
+                                            ConsoleTool.LOGS -> consoleCard()
+                                            ConsoleTool.COMMANDS -> recentCommandsCard()
+                                        }
+                                        // The opened info card goes first; the usual ones stay below it.
+                                        is RightPaneView.Info -> {
+                                            cardContent(tool.card)
+                                            infoCards()
+                                        }
+                                        null -> infoCards()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    val portraitScroll = rememberScrollState()
+                    val swipeTracker = remember { VelocityTracker() }
+                    var swipeDrag by remember { mutableFloatStateOf(0f) }
                     Column(
                         modifier = Modifier
-                            .fillMaxHeight()
-                            .weight(1f)
-                            .verticalEdgeFade(infoScroll)
-                            .verticalScroll(infoScroll)
-                            .padding(horizontal = 16.dp, vertical = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                            .fillMaxSize()
+                            // Swipe left/right anywhere to change tab. Vertical drags still scroll
+                            // (the scroll claims them first), and horizontally scrolling rows inside
+                            // cards keep their own swipes.
+                            .pointerInput(Unit) {
+                                detectHorizontalDragGestures(
+                                    onDragStart = {
+                                        swipeTracker.resetTracking()
+                                        swipeDrag = 0f
+                                    },
+                                    onDragEnd = {
+                                        val velocityX = swipeTracker.calculateVelocity().x
+                                        val flingVelocity = TAB_SWIPE_VELOCITY_DP_PER_S.dp.toPx()
+                                        val distance = size.width * TAB_SWIPE_DISTANCE_FRACTION
+                                        val step = when {
+                                            velocityX < -flingVelocity -> 1
+                                            velocityX > flingVelocity -> -1
+                                            swipeDrag < -distance -> 1
+                                            swipeDrag > distance -> -1
+                                            else -> 0
+                                        }
+                                        if (step != 0) switchTab(step)
+                                        swipeDrag = 0f
+                                        scope.launch { tabSwipeOffset.animateTo(0f, tween(durationMillis = 250)) }
+                                    },
+                                    onDragCancel = {
+                                        swipeDrag = 0f
+                                        scope.launch { tabSwipeOffset.animateTo(0f, tween(durationMillis = 200)) }
+                                    },
+                                ) { change, dragAmount ->
+                                    change.consume()
+                                    swipeTracker.addPosition(change.uptimeMillis, change.position)
+                                    swipeDrag += dragAmount
+                                    val index = categoryOrder.indexOf(selectedCategory)
+                                    val hasNeighbour = if (swipeDrag < 0f) index < categoryOrder.lastIndex else index > 0
+                                    val follow = if (hasNeighbour) TAB_SWIPE_FOLLOW else TAB_SWIPE_FOLLOW_AT_EDGE
+                                    val offset = swipeDrag * follow
+                                    scope.launch { tabSwipeOffset.snapTo(offset) }
+                                }
+                            }
+                            .verticalEdgeFade(portraitScroll)
+                            .verticalScroll(portraitScroll)
+                            .padding(horizontal = 20.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(18.dp),
                     ) {
-                        // Always first, whatever opens below it: is the database reachable?
+                        header()
                         connectionCard()
-                        AnimatedContent(
-                            targetState = rightPaneTool,
-                            transitionSpec = {
-                                fadeIn(tween(durationMillis = 220)) togetherWith fadeOut(tween(durationMillis = 150))
-                            },
-                            label = "rightPane",
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { tool ->
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(14.dp),
-                            ) {
-                                val infoCards: @Composable () -> Unit = {
-                                    systemInfoCard()
-                                    latestCommandCard()
-                                    errorText()
-                                }
-                                when (tool) {
-                                    is RightPaneView.Tool -> when (tool.tool) {
-                                        ConsoleTool.LOGS -> consoleCard()
-                                        ConsoleTool.COMMANDS -> recentCommandsCard()
-                                    }
-                                    // The opened info card goes first; the usual ones stay below it.
-                                    is RightPaneView.Info -> {
-                                        cardContent(tool.card)
-                                        infoCards()
-                                    }
-                                    null -> infoCards()
-                                }
-                            }
-                        }
+                        categoryContent()
+                        systemInfoCard()
+                        latestCommandCard()
+                        errorText()
                     }
-                }
-            } else {
-                val portraitScroll = rememberScrollState()
-                val swipeTracker = remember { VelocityTracker() }
-                var swipeDrag by remember { mutableFloatStateOf(0f) }
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        // Swipe left/right anywhere to change tab. Vertical drags still scroll
-                        // (the scroll claims them first), and horizontally scrolling rows inside
-                        // cards keep their own swipes.
-                        .pointerInput(Unit) {
-                            detectHorizontalDragGestures(
-                                onDragStart = {
-                                    swipeTracker.resetTracking()
-                                    swipeDrag = 0f
-                                },
-                                onDragEnd = {
-                                    val velocityX = swipeTracker.calculateVelocity().x
-                                    val flingVelocity = TAB_SWIPE_VELOCITY_DP_PER_S.dp.toPx()
-                                    val distance = size.width * TAB_SWIPE_DISTANCE_FRACTION
-                                    val step = when {
-                                        velocityX < -flingVelocity -> 1
-                                        velocityX > flingVelocity -> -1
-                                        swipeDrag < -distance -> 1
-                                        swipeDrag > distance -> -1
-                                        else -> 0
-                                    }
-                                    if (step != 0) switchTab(step)
-                                    swipeDrag = 0f
-                                    scope.launch { tabSwipeOffset.animateTo(0f, tween(durationMillis = 250)) }
-                                },
-                                onDragCancel = {
-                                    swipeDrag = 0f
-                                    scope.launch { tabSwipeOffset.animateTo(0f, tween(durationMillis = 200)) }
-                                },
-                            ) { change, dragAmount ->
-                                change.consume()
-                                swipeTracker.addPosition(change.uptimeMillis, change.position)
-                                swipeDrag += dragAmount
-                                val index = categoryOrder.indexOf(selectedCategory)
-                                val hasNeighbour = if (swipeDrag < 0f) index < categoryOrder.lastIndex else index > 0
-                                val follow = if (hasNeighbour) TAB_SWIPE_FOLLOW else TAB_SWIPE_FOLLOW_AT_EDGE
-                                val offset = swipeDrag * follow
-                                scope.launch { tabSwipeOffset.snapTo(offset) }
-                            }
-                        }
-                        .verticalEdgeFade(portraitScroll)
-                        .verticalScroll(portraitScroll)
-                        .padding(horizontal = 20.dp, vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(18.dp),
-                ) {
-                    header()
-                    connectionCard()
-                    categoryContent()
-                    systemInfoCard()
-                    latestCommandCard()
-                    errorText()
                 }
             }
         }
+
+        // Settings: over everything, sliding up from under the bottom bar.
+        SettingsSheet(
+            visible = settingsOpen,
+            onClose = { settingsOpen = false },
+            model = SettingsModel(
+                favoriteRows = favoriteRows,
+                onFavoriteRows = { rows ->
+                    favoriteRows = FavoriteApps.clampRows(rows)
+                    settingsPrefs.edit().putInt("favoriteRows", favoriteRows).apply()
+                    AppLog.info("Settings", "Favorite rows set to $favoriteRows")
+                },
+                deviceNameCount = deviceNames.size,
+                onImportNames = { names, done ->
+                    // One multi-path write: every name lands, or none does (the Rules check each).
+                    dataRef("network/aliases").updateChildren(names.mapValues { it.value as Any })
+                        .addOnSuccessListener {
+                            AppLog.info("Network", "Imported ${names.size} device names")
+                            done("Saved ${names.size} names. They show up in \"On the network\" right away.")
+                        }
+                        .addOnFailureListener { exception ->
+                            AppLog.error("Network", "Could not import device names: ${exception.localizedMessage}")
+                            done("Could not save the names: ${exception.localizedMessage ?: "unknown error"}")
+                        }
+                },
+                appVersion = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                computerName = device.name,
+                serverVersion = device.agentVersion,
+            ),
+        )
     }
 }
 
@@ -3389,6 +3486,8 @@ internal fun AppTile(
     working: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+    longClickLabel: String? = null,
     editing: Boolean = false,
     removing: Boolean = false,
     onRemove: () -> Unit = {},
@@ -3400,14 +3499,6 @@ internal fun AppTile(
         tween(RECENT_REMOVE_MILLIS.toInt()),
         label = "tilePresence",
     )
-    val icon = remember(app.key, app.icon) {
-        app.icon?.let { encoded ->
-            runCatching {
-                val bytes = Base64.decode(encoded, Base64.DEFAULT)
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-            }.getOrNull()
-        }
-    }
     Column(
         modifier = modifier
             .graphicsLayer {
@@ -3416,25 +3507,20 @@ internal fun AppTile(
                 scaleY = 0.7f + 0.3f * presence
             }
             .clip(RoundedCornerShape(14.dp))
-            // While editing, a tap doesn't open the app (only the ✕ does something).
-            .clickable(enabled = enabled && !editing, onClickLabel = "Open ${app.name}", onClick = onClick)
+            // While editing, the tile itself does nothing (only the ✕ does). Holding it works
+            // even while the computer can't take commands: it only changes Favorites.
+            .combinedClickable(
+                enabled = !editing,
+                onClickLabel = "Open ${app.name}",
+                onClick = { if (enabled) onClick() },
+                onLongClickLabel = longClickLabel,
+                onLongClick = onLongClick,
+            )
             .padding(vertical = 6.dp, horizontal = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-            if (icon != null) {
-                Image(icon, contentDescription = null, modifier = Modifier.fillMaxSize())
-            } else {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(palette.ink.copy(alpha = 0.10f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(app.name.take(1).uppercase(), style = MaterialTheme.typography.titleMedium)
-                }
-            }
+            AppIcon(app, Modifier.fillMaxSize())
             if (working) {
                 CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = GlassColors.Orange)
             }
@@ -3481,5 +3567,104 @@ internal fun AppTile(
             overflow = TextOverflow.Ellipsis,
             color = if (enabled) palette.ink else palette.inkFaint,
         )
+    }
+}
+
+/** An empty place in the Favorites deck: a faint rounded square with a "+" that adds an app. */
+@Composable
+internal fun AddAppSlot(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val palette = LocalGlassPalette.current
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClickLabel = "Add a favorite app", onClick = onClick)
+            .padding(vertical = 6.dp, horizontal = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .border(1.dp, palette.ink.copy(alpha = 0.18f), RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = null, tint = palette.inkFaint, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.height(4.dp))
+        Text("Add", style = MaterialTheme.typography.labelSmall, color = palette.inkFaint)
+    }
+}
+
+/** Picks an app for the Favorites deck: a search field and the apps not pinned yet. */
+@Composable
+internal fun FavoritePicker(apps: List<ServerApp>, favorites: List<String>, onPick: (ServerApp) -> Unit, onDismiss: () -> Unit) {
+    var query by remember { mutableStateOf("") }
+    val choices = remember(apps, favorites, query) {
+        ServerApps.search(apps.filter { it.bundleId !in favorites }, query)
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add to Favorites") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassTextField(
+                    value = query,
+                    onValueChange = { query = it.take(60) },
+                    placeholder = "Search apps",
+                    clearDescription = "Clear the search",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                    items(choices, key = { it.key }) { app ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable(onClickLabel = "Add ${app.name}") { onPick(app) }
+                                .padding(vertical = 6.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            AppIcon(app, Modifier.size(32.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Text(app.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+                if (choices.isEmpty()) {
+                    Text(
+                        if (query.isBlank()) "Every app is already a favorite." else "No app matches \"${query.trim()}\".",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LocalGlassPalette.current.inkMuted,
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
+}
+
+/** An app's icon (decoded once), or its first letter on a faint square when it has none. */
+@Composable
+internal fun AppIcon(app: ServerApp, modifier: Modifier = Modifier) {
+    val palette = LocalGlassPalette.current
+    val icon = remember(app.key, app.icon) {
+        app.icon?.let { encoded ->
+            runCatching {
+                val bytes = Base64.decode(encoded, Base64.DEFAULT)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+            }.getOrNull()
+        }
+    }
+    if (icon != null) {
+        Image(icon, contentDescription = null, modifier = modifier)
+    } else {
+        Box(
+            modifier
+                .clip(RoundedCornerShape(10.dp))
+                .background(palette.ink.copy(alpha = 0.10f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(app.name.take(1).uppercase(), style = MaterialTheme.typography.titleMedium)
+        }
     }
 }

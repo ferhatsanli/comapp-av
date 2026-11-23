@@ -41,6 +41,30 @@ internal object ServerApps {
 
     fun encode(recent: List<String>): String = recent.joinToString(",")
 
-    fun decode(saved: String?): List<String> =
-        saved.orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }.take(MAX_RECENT)
+    fun decode(saved: String?, limit: Int = MAX_RECENT): List<String> =
+        saved.orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }.take(limit)
+}
+
+/** The Favorites deck of the Apps card: apps the user pinned, in the order they were added. */
+internal object FavoriteApps {
+    const val MIN_ROWS = 1
+    const val MAX_ROWS = 4
+    const val DEFAULT_ROWS = 2
+
+    enum class Change { ADDED, REMOVED, FULL }
+
+    /** Adds [bundleId] (when there is room for [capacity] apps) or removes it if it's there. */
+    fun toggle(favorites: List<String>, bundleId: String, capacity: Int): Pair<List<String>, Change> = when {
+        bundleId in favorites -> favorites.filter { it != bundleId } to Change.REMOVED
+        favorites.size >= capacity -> favorites to Change.FULL
+        else -> (favorites + bundleId) to Change.ADDED
+    }
+
+    /** The pinned apps that are still installed, in deck order. */
+    fun shown(apps: List<ServerApp>, favorites: List<String>): List<ServerApp> {
+        val byId = apps.associateBy { it.bundleId }
+        return favorites.mapNotNull { byId[it] }
+    }
+
+    fun clampRows(rows: Int): Int = rows.coerceIn(MIN_ROWS, MAX_ROWS)
 }

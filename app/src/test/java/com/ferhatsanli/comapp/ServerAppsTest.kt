@@ -42,4 +42,19 @@ class ServerAppsTest {
         assertEquals(listOf("a", "c"), ServerApps.removed(listOf("a", "b", "c"), "b"))
         assertEquals(listOf("a"), ServerApps.removed(listOf("a"), "missing"))
     }
+
+    @Test
+    fun favoritesToggleWithinTheDeck() {
+        var favorites = emptyList<String>()
+        favorites = FavoriteApps.toggle(favorites, "a", capacity = 2).first
+        favorites = FavoriteApps.toggle(favorites, "b", capacity = 2).first
+        val (full, change) = FavoriteApps.toggle(favorites, "c", capacity = 2)
+        assertEquals(FavoriteApps.Change.FULL, change)
+        assertEquals(listOf("a", "b"), full)
+        val (removed, removal) = FavoriteApps.toggle(favorites, "a", capacity = 2)
+        assertEquals(FavoriteApps.Change.REMOVED, removal)
+        assertEquals(listOf("b"), removed)
+        assertEquals(listOf("org.videolan.vlc"), FavoriteApps.shown(apps, listOf("gone", "org.videolan.vlc")).map { it.bundleId })
+        assertEquals(listOf(1, 4, 2), listOf(0, 9, 2).map { FavoriteApps.clampRows(it) })
+    }
 }

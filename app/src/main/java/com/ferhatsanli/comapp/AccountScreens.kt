@@ -1,5 +1,6 @@
 package com.ferhatsanli.comapp
 
+import com.ferhatsanli.comapp.ui.glass.GlassTextField
 import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -336,13 +337,13 @@ private fun PairingScreen(
                         "2. The agent shows an 8-character code. Type it here within 10 minutes.",
                     color = palette.inkMuted,
                 )
-                OutlinedTextField(
+                GlassTextField(
                     value = code,
                     onValueChange = {
                         code = Devices.normalizeCode(it)
                         error = null
                     },
-                    label = { Text("Code from the computer") },
+                    label = "Code from the computer",
                     singleLine = true,
                     enabled = !busy,
                     textStyle = MaterialTheme.typography.titleLarge.copy(
@@ -355,9 +356,8 @@ private fun PairingScreen(
                         imeAction = ImeAction.Done,
                     ),
                     keyboardActions = KeyboardActions(onDone = { pair() }),
-                    shape = GlassFieldShape,
-                    colors = glassTextFieldColors(),
                     modifier = Modifier.fillMaxWidth(),
+                    clearDescription = "Clear the code",
                 )
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 GlassButton(
@@ -515,14 +515,13 @@ private fun DeviceMenu(
                             }
                         }
                     }
-                    OutlinedTextField(
+                    GlassTextField(
                         value = name,
                         onValueChange = { name = it.take(Devices.MAX_NAME_LENGTH) },
-                        label = { Text("Name of this computer") },
+                        label = "Name of this computer",
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { rename() }),
-                        shape = GlassFieldShape,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     if (Devices.cleanName(name).let { it.isNotEmpty() && it != current.name }) {
