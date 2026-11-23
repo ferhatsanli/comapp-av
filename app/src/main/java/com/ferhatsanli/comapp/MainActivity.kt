@@ -3147,7 +3147,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                             }
                             else -> Toast.makeText(
                                 context,
-                                stringResource(R.string.cant_refresh),
+                                res.getString(R.string.cant_refresh),
                                 Toast.LENGTH_SHORT,
                             ).show()
                         }
