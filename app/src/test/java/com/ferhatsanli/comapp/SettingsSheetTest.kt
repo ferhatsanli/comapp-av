@@ -15,7 +15,10 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -31,13 +34,13 @@ class SettingsSheetTest {
     @Test
     fun rowsStepperAndImportWork() {
         var rows by mutableIntStateOf(2)
-        var open by mutableStateOf(true)
+        lateinit var sheet: SettingsSheetState
         var developer by mutableStateOf(false)
         var imported: Map<String, String>? = null
         rule.setContent {
+            sheet = rememberSettingsSheetState(initiallyOpen = true)
             SettingsSheet(
-                visible = open,
-                onClose = { open = false },
+                state = sheet,
                 model = SettingsModel(
                     favoriteRows = rows,
                     onFavoriteRows = { rows = FavoriteApps.clampRows(it) },
@@ -73,7 +76,50 @@ class SettingsSheetTest {
         rule.onNode(isToggleable()).assertIsOn()
 
         rule.onNodeWithContentDescription("Close settings").performClick()
-        rule.mainClock.advanceTimeBy(500)
+        rule.mainClock.advanceTimeBy(1500)
+        rule.onNodeWithText("Settings").assertDoesNotExist()
+        assertEquals(0f, sheet.progress)
+    }
+
+    @Test
+    fun theSheetFollowsAFingerAndSettlesByPosition() {
+        lateinit var sheet: SettingsSheetState
+        rule.setContent {
+            sheet = rememberSettingsSheetState()
+            SettingsSheet(state = sheet, model = model())
+        }
+        rule.onNodeWithText("Settings").assertDoesNotExist()
+        // A third of the way up and let go slowly: it falls back closed.
+        rule.runOnIdle {
+            sheet.dragBy(-sheet.heightPx / 3)
+            assertEquals(1f / 3, sheet.progress, 0.01f)
+            assertTrue(sheet.visible)
+            sheet.release(0f)
+        }
+        rule.mainClock.advanceTimeBy(1500)
+        rule.runOnIdle { assertEquals(0f, sheet.progress) }
+        // Two thirds and let go: it opens, and the title is drawn.
+        rule.runOnIdle {
+            sheet.dragBy(-sheet.heightPx * 2 / 3)
+            sheet.release(0f)
+        }
+        rule.mainClock.advanceTimeBy(1500)
+        rule.runOnIdle { assertEquals(1f, sheet.progress) }
+        rule.onNodeWithText("Settings").assertExists()
+        // A real swipe down on the title closes it.
+        rule.onNodeWithText("Settings").performTouchInput { swipeDown(startY = centerY, endY = centerY + 1500f) }
+        rule.mainClock.advanceTimeBy(1500)
+        rule.runOnIdle { assertEquals(0f, sheet.progress) }
         rule.onNodeWithText("Settings").assertDoesNotExist()
     }
+
+    private fun model() = SettingsModel(
+        favoriteRows = 2,
+        onFavoriteRows = {},
+        deviceNameCount = 0,
+        onImportNames = { _, _ -> },
+        appVersion = "v2.10.2 (42)",
+        computerName = "Ferhat-MacBook",
+        serverVersion = "2.7.0",
+    )
 }

@@ -501,7 +501,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     }
     var pickingFavorite by remember { mutableStateOf(false) }
     // Settings, which slides up from under the bottom bar.
-    var settingsOpen by remember { mutableStateOf(false) }
+    val settingsSheet = rememberSettingsSheetState()
     val appsPrefs = remember { context.getSharedPreferences(APPS_PREFS, Context.MODE_PRIVATE) }
     var recentApps by remember(device.id) {
         mutableStateOf(ServerApps.decode(appsPrefs.getString("recent.${device.id}", null)))
@@ -2213,14 +2213,14 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     // Portrait: a fixed bottom navigation bar, pinned outside the scrolling content.
     val bottomNav: @Composable () -> Unit = {
         // Swiping up on the bar (or tapping its handle) brings Settings up from underneath.
-        GlassNavSurface(Modifier.fillMaxWidth().swipeUpToOpen { settingsOpen = true }) {
+        GlassNavSurface(Modifier.fillMaxWidth().swipeUpToOpen(settingsSheet)) {
             // The glass runs on behind the system navigation bar; the tabs and the light stay above it.
             Column(
                 Modifier
                     .fillMaxWidth()
                     .windowInsetsPadding(WindowInsets.navigationBars),
             ) {
-                SettingsHandle { settingsOpen = true }
+                SettingsHandle { settingsSheet.open() }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -3322,10 +3322,10 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     Column(
                         Modifier
                             .fillMaxWidth()
-                            .swipeUpToOpen { settingsOpen = true }
+                            .swipeUpToOpen(settingsSheet)
                             .windowInsetsPadding(WindowInsets.navigationBars),
                     ) {
-                        SettingsHandle { settingsOpen = true }
+                        SettingsHandle { settingsSheet.open() }
                         CommandStatusLight(commandLight)
                     }
                 } else {
@@ -3479,8 +3479,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
 
         // Settings: over everything, sliding up from under the bottom bar.
         SettingsSheet(
-            visible = settingsOpen,
-            onClose = { settingsOpen = false },
+            state = settingsSheet,
             model = SettingsModel(
                 favoriteRows = favoriteRows,
                 onFavoriteRows = { rows ->

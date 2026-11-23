@@ -1,16 +1,29 @@
 package com.ferhatsanli.comapp
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.composed
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.Velocity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,8 +56,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -58,27 +69,81 @@ import com.ferhatsanli.comapp.ui.glass.GlassSwitchRow
 import com.ferhatsanli.comapp.ui.glass.GlassTextField
 import com.ferhatsanli.comapp.ui.glass.LocalGlassPalette
 
-/** How far a finger must travel on a grab handle before it opens or closes the sheet. */
-internal val SETTINGS_SWIPE_DISTANCE = 40.dp
+/**
+ * Where the Settings sheet is: [progress] 0 = closed, 1 = open. A finger moves it directly
+ * (swiping up on the bottom bar, or down on the sheet), so the main screen shows above the sheet
+ * while it moves; letting go settles it open or closed by position and speed.
+ */
+@Stable
+internal class SettingsSheetState(private val scope: CoroutineScope, initiallyOpen: Boolean) {
+    var progress by mutableFloatStateOf(if (initiallyOpen) 1f else 0f)
+        private set
+
+    /** Where the sheet is heading: true once it is opening or open. */
+    var targetOpen by mutableStateOf(initiallyOpen)
+        private set
+
+    /** The sheet's travel: the height of the area it covers, measured by [SettingsSheet]. */
+    internal var heightPx by mutableFloatStateOf(0f)
+
+    private var settling: Job? = null
+
+    val visible: Boolean get() = progress > 0f || targetOpen
+
+    fun open() = settle(open = true)
+
+    fun close() = settle(open = false)
+
+    /** Moves the sheet with a finger; [deltaPx] > 0 is downwards (closing). */
+    fun dragBy(deltaPx: Float) {
+        if (heightPx <= 0f) return
+        settling?.cancel()
+        progress = (progress - deltaPx / heightPx).coerceIn(0f, 1f)
+    }
+
+    /** The finger let go at [velocityPx] px/s (> 0 downwards): open or close from here. */
+    fun release(velocityPx: Float) {
+        val open = when {
+            velocityPx < -FLING_PX_PER_SECOND -> true
+            velocityPx > FLING_PX_PER_SECOND -> false
+            else -> progress > 0.5f
+        }
+        settle(open, velocityPx)
+    }
+
+    private fun settle(open: Boolean, velocityPx: Float = 0f) {
+        targetOpen = open
+        settling?.cancel()
+        val target = if (open) 1f else 0f
+        val velocity = if (heightPx > 0f) -velocityPx / heightPx else 0f
+        settling = scope.launch {
+            animate(progress, target, velocity, spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow)) { value, _ ->
+                progress = value.coerceIn(0f, 1f)
+            }
+        }
+    }
+
+    private companion object {
+        const val FLING_PX_PER_SECOND = 1200f
+    }
+}
+
+@Composable
+internal fun rememberSettingsSheetState(initiallyOpen: Boolean = false): SettingsSheetState {
+    val scope = rememberCoroutineScope()
+    return remember { SettingsSheetState(scope, initiallyOpen) }
+}
 
 /**
- * A swipe-up detector for the bottom bar: a short upward swipe calls [onOpen]. Taps still go
- * to the tabs underneath; only a vertical drag is taken.
+ * The bottom bar's swipe-up: the sheet follows the finger from the first pixel. Taps still go
+ * to the tabs underneath; only a vertical drag (past the touch slop) is taken.
  */
-@Composable
-internal fun Modifier.swipeUpToOpen(onOpen: () -> Unit): Modifier {
-    val threshold = with(LocalDensity.current) { SETTINGS_SWIPE_DISTANCE.toPx() }
-    return pointerInput(onOpen) {
-        var travelled = 0f
-        detectVerticalDragGestures(
-            onDragStart = { travelled = 0f },
-            onVerticalDrag = { change, amount ->
-                travelled += amount
-                change.consume()
-            },
-            onDragEnd = { if (travelled < -threshold) onOpen() },
-        )
-    }
+internal fun Modifier.swipeUpToOpen(sheet: SettingsSheetState): Modifier = composed {
+    draggable(
+        state = rememberDraggableState { delta -> sheet.dragBy(delta) },
+        orientation = Orientation.Vertical,
+        onDragStopped = { velocity -> sheet.release(velocity) },
+    )
 }
 
 /** The small pill at the top of the bottom bar that hints "swipe up for Settings". */
@@ -115,39 +180,76 @@ internal class SettingsModel(
     val onDeveloperMode: (Boolean) -> Unit = {},
 )
 
-/** Settings, sliding up from under the bottom bar over the whole screen. */
+/**
+ * Settings, sliding up from under the bottom bar over the whole screen. It is drawn where the
+ * finger puts it, with the main screen dimmed a little above it; tapping that part closes it.
+ */
 @Composable
-internal fun SettingsSheet(visible: Boolean, onClose: () -> Unit, model: SettingsModel) {
-    BackHandler(enabled = visible, onBack = onClose)
-    AnimatedVisibility(
-        visible = visible,
-        enter = slideInVertically(tween(260)) { it } + fadeIn(tween(200)),
-        exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(160)),
+internal fun SettingsSheet(state: SettingsSheetState, model: SettingsModel) {
+    BackHandler(enabled = state.targetOpen, onBack = state::close)
+    val palette = LocalGlassPalette.current
+    val scroll = rememberScrollState()
+    // A swipe down on the list itself closes the sheet once the list is at its top.
+    val closeFromList = remember(state) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                // Pushing back up while the sheet is partly pulled down moves the sheet first.
+                if (available.y < 0f && state.progress < 1f && source == NestedScrollSource.UserInput) {
+                    state.dragBy(available.y)
+                    return available
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (available.y > 0f && source == NestedScrollSource.UserInput) {
+                    state.dragBy(available.y)
+                    return available
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (state.progress < 1f) {
+                    state.release(available.y)
+                    return available
+                }
+                return Velocity.Zero
+            }
+        }
+    }
+    // Always laid out (it takes no touches of its own) so the sheet knows its travel before it
+    // is first pulled up.
+    Box(
+        Modifier
+            .fillMaxSize()
+            .onSizeChanged { state.heightPx = it.height.toFloat() },
     ) {
-        val palette = LocalGlassPalette.current
-        val threshold = with(LocalDensity.current) { SETTINGS_SWIPE_DISTANCE.toPx() }
+        if (!state.visible) return@Box
         Box(
             Modifier
                 .fillMaxSize()
+                .graphicsLayer { alpha = state.progress }
+                .background(Color.Black.copy(alpha = 0.35f))
+                .clickable(interactionSource = null, indication = null, onClickLabel = "Close settings") { state.close() },
+        )
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { translationY = (1f - state.progress) * size.height }
                 .background(palette.baseMid.copy(alpha = 0.97f))
                 .windowInsetsPadding(WindowInsets.safeDrawing),
         ) {
             Column(Modifier.fillMaxSize()) {
-                // The handle and title: a swipe down here closes the sheet again.
+                // The handle and title: the sheet follows a finger dragging them down.
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .pointerInput(onClose) {
-                            var travelled = 0f
-                            detectVerticalDragGestures(
-                                onDragStart = { travelled = 0f },
-                                onVerticalDrag = { change, amount ->
-                                    travelled += amount
-                                    change.consume()
-                                },
-                                onDragEnd = { if (travelled > threshold) onClose() },
-                            )
-                        }
+                        .draggable(
+                            state = rememberDraggableState { delta -> state.dragBy(delta) },
+                            orientation = Orientation.Vertical,
+                            onDragStopped = { velocity -> state.release(velocity) },
+                        )
                         .padding(horizontal = 16.dp),
                 ) {
                     Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
@@ -165,13 +267,14 @@ internal fun SettingsSheet(visible: Boolean, onClose: () -> Unit, model: Setting
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.weight(1f),
                         )
-                        GlassIconAction(Icons.Filled.Close, "Close settings", onClose)
+                        GlassIconAction(Icons.Filled.Close, "Close settings", state::close)
                     }
                 }
                 Column(
                     Modifier
                         .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
+                        .nestedScroll(closeFromList)
+                        .verticalScroll(scroll)
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
