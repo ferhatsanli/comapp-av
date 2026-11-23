@@ -9,7 +9,10 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -59,8 +62,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.ferhatsanli.comapp.ui.glass.GlassButton
+import com.ferhatsanli.comapp.ui.glass.GlassChip
 import com.ferhatsanli.comapp.ui.glass.GlassCard
 import com.ferhatsanli.comapp.ui.glass.GlassColors
 import com.ferhatsanli.comapp.ui.glass.GlassIconAction
@@ -131,7 +137,11 @@ internal class SettingsSheetState(private val scope: CoroutineScope, initiallyOp
 @Composable
 internal fun rememberSettingsSheetState(initiallyOpen: Boolean = false): SettingsSheetState {
     val scope = rememberCoroutineScope()
-    return remember { SettingsSheetState(scope, initiallyOpen) }
+    // Kept across a recreate (a language change rebuilds the screen with Settings still open).
+    var wasOpen by rememberSaveable { mutableStateOf(initiallyOpen) }
+    val state = remember { SettingsSheetState(scope, wasOpen) }
+    LaunchedEffect(state) { snapshotFlow { state.targetOpen }.collect { wasOpen = it } }
+    return state
 }
 
 /**
@@ -149,12 +159,13 @@ internal fun Modifier.swipeUpToOpen(sheet: SettingsSheetState): Modifier = compo
 /** The small pill at the top of the bottom bar that hints "swipe up for Settings". */
 @Composable
 internal fun SettingsHandle(onOpen: () -> Unit) {
+    val handleDescription = stringResource(R.string.settings_handle)
     Box(
         Modifier
             .fillMaxWidth()
             .height(14.dp)
-            .clickable(onClickLabel = "Open settings", onClick = onOpen)
-            .semantics { contentDescription = "Settings: swipe up or tap" },
+            .clickable(onClickLabel = stringResource(R.string.settings_open), onClick = onOpen)
+            .semantics { contentDescription = handleDescription },
         contentAlignment = Alignment.Center,
     ) {
         Box(
@@ -171,13 +182,15 @@ internal class SettingsModel(
     val favoriteRows: Int,
     val onFavoriteRows: (Int) -> Unit,
     val deviceNameCount: Int,
-    /** Saves the names for this computer; calls back with a line saying how it went. */
-    val onImportNames: (Map<String, String>, (String) -> Unit) -> Unit,
+    /** Saves the names for this computer; calls back with how many were saved, or the error. */
+    val onImportNames: (Map<String, String>, (Result<Int>) -> Unit) -> Unit,
     val appVersion: String,
     val computerName: String,
     val serverVersion: String?,
     val developerMode: Boolean = false,
     val onDeveloperMode: (Boolean) -> Unit = {},
+    val language: AppLanguage = AppLanguage.SYSTEM,
+    val onLanguage: (AppLanguage) -> Unit = {},
 )
 
 /**
@@ -231,7 +244,7 @@ internal fun SettingsSheet(state: SettingsSheetState, model: SettingsModel) {
                 .fillMaxSize()
                 .graphicsLayer { alpha = state.progress }
                 .background(Color.Black.copy(alpha = 0.35f))
-                .clickable(interactionSource = null, indication = null, onClickLabel = "Close settings") { state.close() },
+                .clickable(interactionSource = null, indication = null, onClickLabel = stringResource(R.string.settings_close)) { state.close() },
         )
         Box(
             Modifier
@@ -262,12 +275,12 @@ internal fun SettingsSheet(state: SettingsSheetState, model: SettingsModel) {
                     }
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            "Settings",
+                            stringResource(R.string.settings_title),
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.weight(1f),
                         )
-                        GlassIconAction(Icons.Filled.Close, "Close settings", state::close)
+                        GlassIconAction(Icons.Filled.Close, stringResource(R.string.settings_close), state::close)
                     }
                 }
                 Column(
@@ -278,6 +291,7 @@ internal fun SettingsSheet(state: SettingsSheetState, model: SettingsModel) {
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
+                    LanguageSettings(model)
                     AppsSettings(model)
                     DeviceNameSettings(model)
                     DeveloperSettings(model)
@@ -291,13 +305,20 @@ internal fun SettingsSheet(state: SettingsSheetState, model: SettingsModel) {
 @Composable
 private fun AppsSettings(model: SettingsModel) {
     val palette = LocalGlassPalette.current
+    val rowLess = stringResource(R.string.settings_row_less)
+    val rowsLabel = pluralStringResource(R.plurals.settings_rows, model.favoriteRows, model.favoriteRows)
     GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Indigo, cornerRadius = 22.dp) {
-        Text("Apps", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(stringResource(R.string.settings_apps), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Favorite rows", style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(R.string.settings_favorite_rows), style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    "${model.favoriteRows * APPS_PER_ROW} favorites fit (${APPS_PER_ROW} per row).",
+                    pluralStringResource(
+                        R.plurals.settings_favorites_fit,
+                        model.favoriteRows * APPS_PER_ROW,
+                        model.favoriteRows * APPS_PER_ROW,
+                        APPS_PER_ROW,
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = palette.inkMuted,
                 )
@@ -311,7 +332,7 @@ private fun AppsSettings(model: SettingsModel) {
                 Canvas(
                     Modifier
                         .size(24.dp)
-                        .semantics { contentDescription = "One row less" },
+                        .semantics { contentDescription = rowLess },
                 ) {
                     val y = size.height / 2
                     drawLine(tint, Offset(size.width * 0.21f, y), Offset(size.width * 0.79f, y), 2.dp.toPx())
@@ -322,12 +343,12 @@ private fun AppsSettings(model: SettingsModel) {
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier
                     .width(24.dp)
-                    .semantics { contentDescription = "${model.favoriteRows} rows" },
+                    .semantics { contentDescription = rowsLabel },
             )
             IconButton(
                 enabled = model.favoriteRows < FavoriteApps.MAX_ROWS,
                 onClick = { model.onFavoriteRows(model.favoriteRows + 1) },
-            ) { Icon(Icons.Filled.Add, contentDescription = "One row more", tint = palette.inkMuted) }
+            ) { Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.settings_row_more), tint = palette.inkMuted) }
         }
     }
 }
@@ -336,47 +357,77 @@ private fun AppsSettings(model: SettingsModel) {
 private fun DeviceNameSettings(model: SettingsModel) {
     val palette = LocalGlassPalette.current
     var pasted by remember { mutableStateOf("") }
-    var outcome by remember { mutableStateOf<String?>(null) }
+    var outcome by remember { mutableStateOf<Result<Int>?>(null) }
     var saving by remember { mutableStateOf(false) }
     val parsed = remember(pasted) { DeviceNames.parse(pasted) }
     GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Neutral, cornerRadius = 22.dp) {
-        Text("Device names", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(stringResource(R.string.settings_device_names), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Text(
-            "Names for \"On the network\" on ${model.computerName}: ${model.deviceNameCount} saved. " +
-                "Paste a list to add many at once, one MAC and name per line " +
-                "(\"48:D3:43:4A:1D:60\": \"Modem\" works, so does 48:D3:43:4A:1D:60 = Modem).",
+            stringResource(R.string.settings_device_names_help, model.computerName, model.deviceNameCount),
             style = MaterialTheme.typography.bodySmall,
             color = palette.inkMuted,
         )
-        GlassSectionHeader("Paste a list")
+        GlassSectionHeader(stringResource(R.string.settings_paste_list))
         GlassTextField(
             value = pasted,
             onValueChange = {
                 pasted = it.take(20_000)
                 outcome = null
             },
-            placeholder = "\"AA:BB:CC:DD:EE:FF\": \"Living Room TV\"",
+            placeholder = stringResource(R.string.settings_paste_example),
             singleLine = false,
             minLines = 3,
             maxLines = 8,
-            clearDescription = "Clear the list",
+            clearDescription = stringResource(R.string.settings_clear_list),
             modifier = Modifier.fillMaxWidth(),
         )
         GlassButton(
-            text = if (parsed.isEmpty()) "Nothing to import yet" else "Import ${parsed.size} names",
+            text = if (parsed.isEmpty()) {
+                stringResource(R.string.settings_nothing_to_import)
+            } else {
+                pluralStringResource(R.plurals.settings_import_names, parsed.size, parsed.size)
+            },
             enabled = parsed.isNotEmpty() && !saving,
             loading = saving,
             accent = GlassColors.Blue,
             onClick = {
                 saving = true
-                model.onImportNames(parsed) { line ->
+                model.onImportNames(parsed) { result ->
                     saving = false
-                    outcome = line
-                    if (line.startsWith("Saved")) pasted = ""
+                    outcome = result
+                    if (result.isSuccess) pasted = ""
                 }
             },
         )
-        outcome?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = palette.inkMuted) }
+        outcome?.let { result ->
+            Text(
+                result.fold(
+                    onSuccess = { count -> pluralStringResource(R.plurals.settings_import_saved, count, count) },
+                    onFailure = { error -> stringResource(R.string.settings_import_failed, error.localizedMessage ?: "?") },
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.inkMuted,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LanguageSettings(model: SettingsModel) {
+    val palette = LocalGlassPalette.current
+    GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Blue, cornerRadius = 22.dp) {
+        Text(stringResource(R.string.settings_language), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (language in AppLanguage.entries) {
+                GlassChip(
+                    text = if (language == AppLanguage.SYSTEM) stringResource(R.string.settings_language_system) else language.nativeName,
+                    onClick = { if (language != model.language) model.onLanguage(language) },
+                    selected = language == model.language,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        Text(stringResource(R.string.settings_language_help), style = MaterialTheme.typography.bodySmall, color = palette.inkMuted)
     }
 }
 
@@ -384,8 +435,8 @@ private fun DeviceNameSettings(model: SettingsModel) {
 private fun DeveloperSettings(model: SettingsModel) {
     GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Amber, cornerRadius = 22.dp) {
         GlassSwitchRow(
-            title = "Developer Mode",
-            subtitle = "Shows the Console, the Realtime Database and Latest command cards, and the app version.",
+            title = stringResource(R.string.settings_developer_mode),
+            subtitle = stringResource(R.string.settings_developer_mode_help),
             checked = model.developerMode,
             onCheckedChange = model.onDeveloperMode,
             accent = GlassColors.Amber,
@@ -397,10 +448,14 @@ private fun DeveloperSettings(model: SettingsModel) {
 private fun AboutSettings(model: SettingsModel) {
     val palette = LocalGlassPalette.current
     GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Green, cornerRadius = 22.dp) {
-        Text("About", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text("App ${model.appVersion}", style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(R.string.settings_about), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(stringResource(R.string.settings_app_version, model.appVersion), style = MaterialTheme.typography.bodyMedium)
         Text(
-            "Server on ${model.computerName}: " + (model.serverVersion?.let { "v$it" } ?: "version not reported"),
+            stringResource(
+                R.string.settings_server_version,
+                model.computerName,
+                model.serverVersion?.let { "v$it" } ?: stringResource(R.string.settings_server_version_unknown),
+            ),
             style = MaterialTheme.typography.bodyMedium,
             color = palette.inkMuted,
         )

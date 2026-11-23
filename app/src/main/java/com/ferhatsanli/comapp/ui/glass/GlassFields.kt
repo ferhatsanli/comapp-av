@@ -18,6 +18,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.res.stringResource
+import com.ferhatsanli.comapp.R
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -48,7 +50,7 @@ fun GlassTextField(
     label: String? = null,
     placeholder: String? = null,
     clearable: Boolean = true,
-    clearDescription: String = "Clear the text",
+    clearDescription: String = stringResource(R.string.clear_text),
     singleLine: Boolean = true,
     minLines: Int = 1,
     maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,

@@ -47,7 +47,7 @@ class SettingsSheetTest {
                     deviceNameCount = 0,
                     onImportNames = { names, done ->
                         imported = names
-                        done("Saved ${names.size} names.")
+                        done(Result.success(names.size))
                     },
                     appVersion = "v2.9.0 (39)",
                     computerName = "Ferhat-MacBook",
@@ -68,7 +68,7 @@ class SettingsSheetTest {
         )
         rule.onNodeWithText("Import 2 names").performScrollTo().assertIsEnabled().performClick()
         assertEquals(mapOf("48-D3-43-4A-1D-60" to "JVD37-Modem", "B8-27-EB-75-27-A0" to "RPi"), imported)
-        rule.onNodeWithText("Saved 2 names.").assertExists()
+        rule.onNodeWithText("Saved 2 names. They show up in \"On the network\" right away.").assertExists()
 
         rule.onNodeWithText("Developer Mode").performScrollTo()
         rule.onNode(isToggleable()).assertIsOff().performClick()
@@ -122,4 +122,44 @@ class SettingsSheetTest {
         computerName = "Ferhat-MacBook",
         serverVersion = "2.7.0",
     )
+
+    @Test
+    fun languageChipsPickALanguage() {
+        var picked: AppLanguage? = null
+        rule.setContent {
+            SettingsSheet(
+                state = rememberSettingsSheetState(initiallyOpen = true),
+                model = SettingsModel(
+                    favoriteRows = 2,
+                    onFavoriteRows = {},
+                    deviceNameCount = 0,
+                    onImportNames = { _, _ -> },
+                    appVersion = "v2.12.0 (43)",
+                    computerName = "Ferhat-MacBook",
+                    serverVersion = "2.7.0",
+                    onLanguage = { picked = it },
+                ),
+            )
+        }
+        rule.onNodeWithText("Language").assertExists()
+        rule.onNodeWithText("Nederlands").performClick()
+        assertEquals(AppLanguage.DUTCH, picked)
+    }
+
+    @Test
+    @Config(qualifiers = "tr")
+    fun inTurkishTheSheetSpeaksTurkish() {
+        rule.setContent { SettingsSheet(state = rememberSettingsSheetState(initiallyOpen = true), model = model()) }
+        rule.onNodeWithText("Ayarlar").assertExists()
+        rule.onNodeWithText("Dil").assertExists()
+        rule.onNodeWithText("Telefon").assertExists()
+    }
+
+    @Test
+    @Config(qualifiers = "nl")
+    fun inDutchTheSheetSpeaksDutch() {
+        rule.setContent { SettingsSheet(state = rememberSettingsSheetState(initiallyOpen = true), model = model()) }
+        rule.onNodeWithText("Instellingen").assertExists()
+        rule.onNodeWithText("Taal").assertExists()
+    }
 }

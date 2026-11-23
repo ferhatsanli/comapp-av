@@ -1,5 +1,6 @@
 package com.ferhatsanli.comapp
 
+import android.content.res.Resources
 import com.google.firebase.database.ServerValue
 
 internal object PingProtocol {
@@ -122,41 +123,32 @@ internal object PingProtocol {
     }
 
     /** Error codes shared by several commands, in words; null for ones that need no explanation. */
-    fun describeError(code: String?, action: String? = null): String? = when (code) {
-        "BAD_INPUT" -> if (action == OPEN_APP_ACTION) {
-            "That app isn't on the computer's list anymore. Refresh the list and try again."
-        } else {
-            null
-        }
-        "NOT_PERMITTED" -> when (action) {
-            MEDIA_ACTION ->
-                "The computer hasn't allowed the agent to press media keys yet. On the Mac, open System Settings > " +
-                    "Privacy & Security > Accessibility, turn on Python, then try again."
-            SLEEP_ACTION ->
-                "A timed sleep needs the admin setup on the Mac: run install-macos-admin.sh on it once. " +
-                    "Sleep until morning works without it."
-            SYSTEM_UPDATE_CANCEL_ACTION ->
-                "Cancelling needs the newer admin setup on the Mac: run install-macos-admin.sh on it again."
-            else ->
-                "The server computer isn't set up for this yet. Run the admin setup on it once: " +
-                    "install-macos-admin.sh on a Mac, install-remote-admin.sh on Linux."
-        }
-        "UPDATE_RUNNING" -> "A system update is running on the server computer. Try again when it has finished."
-        "SLEEP_CYCLE_ACTIVE" -> "Power save already puts the server computer to sleep between checks. Switch to Performance to use Sleep."
+    fun describeError(res: Resources, code: String?, action: String? = null): String? = when (code) {
+        "BAD_INPUT" -> if (action == OPEN_APP_ACTION) res.getString(R.string.cmd_err_app_gone) else null
+        "NOT_PERMITTED" -> res.getString(
+            when (action) {
+                MEDIA_ACTION -> R.string.cmd_err_media_permission
+                SLEEP_ACTION -> R.string.cmd_err_sleep_permission
+                SYSTEM_UPDATE_CANCEL_ACTION -> R.string.cmd_err_cancel_permission
+                else -> R.string.cmd_err_admin_setup
+            },
+        )
+        "UPDATE_RUNNING" -> res.getString(R.string.cmd_err_update_running)
+        "SLEEP_CYCLE_ACTIVE" -> res.getString(R.string.cmd_err_sleep_cycle)
         else -> null
     }
 
     /** "Tailscale" line of System Info for a /power/latest tailscale value. */
-    fun tailscaleLabel(state: String?): String? = when (state) {
-        "RUNNING" -> "Connected"
-        "STOPPED" -> "Off"
-        "STARTING" -> "Starting"
-        "NEEDS_LOGIN" -> "Needs login"
-        "DAEMON_OFF" -> "Off (service stopped)"
-        "NOT_INSTALLED" -> "Not installed"
-        "UNKNOWN" -> "Unknown"
+    fun tailscaleLabel(res: Resources, state: String?): String? = when (state) {
+        "RUNNING" -> R.string.ts_connected
+        "STOPPED" -> R.string.ts_off
+        "STARTING" -> R.string.ts_starting
+        "NEEDS_LOGIN" -> R.string.ts_needs_login
+        "DAEMON_OFF" -> R.string.ts_daemon_off
+        "NOT_INSTALLED" -> R.string.ts_not_installed
+        "UNKNOWN" -> R.string.common_unknown
         else -> null
-    }
+    }?.let(res::getString)
 
     /** Asks the agent to measure and publish /power/latest right now. */
     fun systemInfoCommand(): Map<String, String> = mapOf(
@@ -171,14 +163,14 @@ internal object PingProtocol {
         "mode" to mode,
     )
 
-    /** 80 -> "1 h 20 min", 120 -> "2 h", 2 -> "2 min". */
-    fun formatDuration(totalMinutes: Int): String {
+    /** 80 -> "1 h 20 min", 120 -> "2 h", 2 -> "2 min" (in English). */
+    fun formatDuration(res: Resources, totalMinutes: Int): String {
         val hours = totalMinutes / 60
         val minutes = totalMinutes % 60
         return when {
-            hours > 0 && minutes > 0 -> "$hours h $minutes min"
-            hours > 0 -> "$hours h"
-            else -> "$minutes min"
+            hours > 0 && minutes > 0 -> res.getString(R.string.duration_h_min, hours, minutes)
+            hours > 0 -> res.getString(R.string.duration_h, hours)
+            else -> res.getString(R.string.duration_min, minutes)
         }
     }
 }

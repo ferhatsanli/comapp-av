@@ -19,5 +19,7 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
+      # The app's texts in every language come from tools/strings; strings.xml must match.
+      - run: python3 tools/build_strings.py --check
       - run: chmod +x gradlew
       - run: ./gradlew --no-daemon testDebugUnitTest assembleDebug

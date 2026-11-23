@@ -2,8 +2,15 @@ package com.ferhatsanli.comapp
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class PingProtocolTest {
+    private val res get() = RuntimeEnvironment.getApplication().resources
     @Test
     fun pendingCommandContainsOnlyTheFixedPingEnvelope() {
         assertEquals(
@@ -53,7 +60,7 @@ class PingProtocolTest {
             PingProtocol.systemUpdateCancelCommand(),
         )
         assert(
-            PingProtocol.describeError("NOT_PERMITTED", PingProtocol.SYSTEM_UPDATE_CANCEL_ACTION)!!
+            PingProtocol.describeError(res, "NOT_PERMITTED", PingProtocol.SYSTEM_UPDATE_CANCEL_ACTION)!!
                 .contains("install-macos-admin.sh on it again"),
         )
     }
@@ -61,13 +68,13 @@ class PingProtocolTest {
     @Test
     fun sharedErrorsAndTailscaleStatesHaveWords() {
         for (code in listOf("NOT_PERMITTED", "UPDATE_RUNNING", "SLEEP_CYCLE_ACTIVE")) {
-            assert(PingProtocol.describeError(code) != null) { code }
+            assert(PingProtocol.describeError(res, code) != null) { code }
         }
-        assertEquals(null, PingProtocol.describeError("AGENT_ERROR"))
+        assertEquals(null, PingProtocol.describeError(res, "AGENT_ERROR"))
         for (state in listOf("RUNNING", "STOPPED", "STARTING", "NEEDS_LOGIN", "DAEMON_OFF", "NOT_INSTALLED", "UNKNOWN")) {
-            assert(PingProtocol.tailscaleLabel(state) != null) { state }
+            assert(PingProtocol.tailscaleLabel(res, state) != null) { state }
         }
-        assertEquals(null, PingProtocol.tailscaleLabel(null))
+        assertEquals(null, PingProtocol.tailscaleLabel(res, null))
     }
 
     @Test
@@ -85,17 +92,17 @@ class PingProtocolTest {
 
     @Test
     fun notPermittedExplainsAccessibilityForMedia() {
-        val media = PingProtocol.describeError("NOT_PERMITTED", PingProtocol.MEDIA_ACTION)!!
+        val media = PingProtocol.describeError(res, "NOT_PERMITTED", PingProtocol.MEDIA_ACTION)!!
         assertEquals(true, media.contains("Accessibility"))
-        val other = PingProtocol.describeError("NOT_PERMITTED", PingProtocol.SHUTDOWN_ACTION)!!
+        val other = PingProtocol.describeError(res, "NOT_PERMITTED", PingProtocol.SHUTDOWN_ACTION)!!
         assertEquals(true, other.contains("install-remote-admin.sh"))
-        assertEquals(other, PingProtocol.describeError("NOT_PERMITTED"))
+        assertEquals(other, PingProtocol.describeError(res, "NOT_PERMITTED"))
     }
 
     @Test
     fun timedSleepWithoutTheAdminSetupPointsToTheMacScript() {
-        assertEquals(true, PingProtocol.describeError("NOT_PERMITTED", PingProtocol.SLEEP_ACTION)!!.contains("install-macos-admin.sh"))
-        val update = PingProtocol.describeError("NOT_PERMITTED", PingProtocol.SYSTEM_UPDATE_ACTION)!!
+        assertEquals(true, PingProtocol.describeError(res, "NOT_PERMITTED", PingProtocol.SLEEP_ACTION)!!.contains("install-macos-admin.sh"))
+        val update = PingProtocol.describeError(res, "NOT_PERMITTED", PingProtocol.SYSTEM_UPDATE_ACTION)!!
         assertEquals(true, update.contains("install-macos-admin.sh") && update.contains("install-remote-admin.sh"))
     }
 

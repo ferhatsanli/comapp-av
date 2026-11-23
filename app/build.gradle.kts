@@ -14,8 +14,8 @@ android {
         applicationId = "com.ferhatsanli.comapp"
         minSdk = 33
         targetSdk = 36
-        versionCode = 42
-        versionName = "2.11.0"
+        versionCode = 43
+        versionName = "2.12.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -30,6 +30,11 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+    }
+    // The app's own language list for Android's per-app language setting (Settings > Apps >
+    // ComApp > Language), made from the values-xx folders.
+    androidResources {
+        generateLocaleConfig = true
     }
     buildFeatures {
         compose = true

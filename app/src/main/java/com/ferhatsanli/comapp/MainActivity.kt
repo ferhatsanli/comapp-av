@@ -27,6 +27,11 @@ import android.graphics.BitmapFactory
 import android.content.Intent
 import android.content.Context
 import android.content.res.Configuration
+import java.util.Locale
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
+import androidx.annotation.StringRes
+import android.content.res.Resources
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -228,42 +233,42 @@ private enum class CardId(val kind: CardKind, val capability: String? = null) {
  * inside each one; [cards] is only the starting order.
  */
 private enum class Category(
-    val label: String,
-    val contents: String,
+    @StringRes val label: Int,
+    @StringRes val contents: Int,
     val accent: Color,
     val cards: List<CardId>,
     val icon: DrawScope.(Color) -> Unit,
 ) {
     COMMANDS(
-        "Commands",
-        "Speak · Update server system",
+        R.string.cat_commands,
+        R.string.cat_commands_sub,
         GlassColors.Blue,
         listOf(CardId.SPEAK, CardId.MEDIA, CardId.APPS, CardId.SYSTEM_UPDATE),
         { tint -> drawCommandsIcon(tint) },
     ),
     POWER(
-        "Power",
-        "Sleep · Restart · Shutdown · Power mode · History",
+        R.string.cat_power,
+        R.string.cat_power_sub,
         GlassColors.Amber,
         listOf(CardId.POWER_CONTROLS, CardId.POWER_MODE, CardId.POWER_HISTORY),
         { tint -> drawPowerIcon(tint) },
     ),
     NETWORK(
-        "Network",
-        "Ping · Scan · Tailscale · Devices",
+        R.string.cat_network,
+        R.string.cat_network_sub,
         GlassColors.Neutral,
         listOf(CardId.PING, CardId.SCAN, CardId.TAILSCALE, CardId.DEVICES),
         { tint -> drawNetworkIcon(tint) },
     ),
     DOWNLOADS(
-        "Downloads",
-        "Torrents · links · speed limit",
+        R.string.cat_downloads,
+        R.string.cat_downloads_sub,
         GlassColors.Indigo,
         listOf(CardId.DOWNLOAD_ADD, CardId.DOWNLOAD_LIST, CardId.DOWNLOAD_LIMIT),
         { tint -> drawDownloadIcon(tint) },
     ),
     CONSOLE(
-        "Console", "App log · errors · recent commands", GlassColors.Green, listOf(CardId.CONSOLE, CardId.RECENT_COMMANDS),
+        R.string.cat_console, R.string.cat_console_sub, GlassColors.Green, listOf(CardId.CONSOLE, CardId.RECENT_COMMANDS),
         { tint -> drawConsoleIcon(tint) },
     ),
 }
@@ -485,6 +490,12 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
 
     // Reorder mode, and the user's saved order of categories and of the cards in each one.
     val context = LocalContext.current
+    // Texts in the app's language; log lines always use [englishRes], so the Console stays English.
+    val res = context.resources
+    val englishRes = remember(context) {
+        context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.ENGLISH) })
+            .resources
+    }
     val focusManager = LocalFocusManager.current
     val orderStore = remember { CardOrderStore(context) }
     // Apps: what the computer can open, and what was opened lately (remembered per computer).
@@ -685,8 +696,8 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         val newCommand = dataRef("commands").push()
         val id = newCommand.key
         if (id == null) {
-            error = "Could not allocate a command ID."
-            AppLog.error("Command", "$action: $error")
+            error = res.getString(R.string.err_no_command_id)
+            AppLog.error("Command", "$action: Could not allocate a command ID.")
         } else {
             commandStatus = null
             errorCode = null
@@ -694,9 +705,8 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             sending = true
             val onFailure = { exception: Exception ->
                 sending = false
-                error = exception.localizedMessage
-                    ?: "Could not send $action. Check the connection and Rules."
-                AppLog.error("Command", "$action could not be sent: $error")
+                error = exception.localizedMessage ?: res.getString(R.string.err_send_failed, action)
+                AppLog.error("Command", "$action could not be sent: ${exception.localizedMessage}")
             }
             val writeCommand = {
                 newCommand.setValue(payload)
@@ -734,12 +744,12 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             .addOnSuccessListener {
                 applyingLimit = false
                 limitPending = true
-                AppLog.info("Downloads", "Speed limit set to ${DownloadProtocol.limitLabel(mbps)}")
+                AppLog.info("Downloads", "Speed limit set to ${DownloadProtocol.limitLabel(englishRes, mbps)}")
             }
             .addOnFailureListener { exception ->
                 applyingLimit = false
-                error = exception.localizedMessage ?: "Could not save the speed limit."
-                AppLog.error("Downloads", "Could not save the speed limit: $error")
+                error = exception.localizedMessage ?: res.getString(R.string.err_save_limit)
+                AppLog.error("Downloads", "Could not save the speed limit: ${exception.localizedMessage}")
             }
     }
 
@@ -749,8 +759,8 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 AppLog.info("Power", "Power save checks every $minutes min (from the next sleep on)")
             }
             .addOnFailureListener { exception ->
-                error = exception.localizedMessage ?: "Could not save the sleep interval."
-                AppLog.error("Power", "Could not save the sleep interval: $error")
+                error = exception.localizedMessage ?: res.getString(R.string.err_save_interval)
+                AppLog.error("Power", "Could not save the sleep interval: ${exception.localizedMessage}")
             }
     }
 
@@ -809,9 +819,8 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 }
 
                 override fun onCancelled(databaseError: DatabaseError) {
-                    val message = "Could not observe command: ${databaseError.message}"
-                    error = message
-                    AppLog.error("Command", message)
+                    error = res.getString(R.string.err_follow_command, databaseError.message)
+                    AppLog.error("Command", "Could not observe command: ${databaseError.message}")
                 }
             }
             commandRef.addValueEventListener(listener)
@@ -1115,7 +1124,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 systemUpdate = status
                 // Console: the update's own output as it arrives, and every change of step.
                 if (previous == null || previous.phase != status.phase || previous.state != status.state) {
-                    if (status.running) AppLog.info("Update", status.describe())
+                    if (status.running) AppLog.info("Update", status.describe(englishRes))
                 }
                 // An old, finished run's output stays on its card instead of filling the Console at start.
                 if (previous != null || status.running) {
@@ -1124,7 +1133,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     }
                 }
                 if (previous?.running == true && !status.running) {
-                    AppLog.info("Update", status.describe())
+                    AppLog.info("Update", status.describe(englishRes))
                 }
             }
 
@@ -1222,12 +1231,14 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     if (request != null) {
         AlertDialog(
             onDismissRequest = { sleepRequest = null },
-            title = { Text("Put the computer to sleep?") },
+            title = { Text(stringResource(R.string.sleep_title)) },
             text = {
                 Text(
-                    "The computer sleeps in a few seconds and wakes up " +
-                        (if (request.minutes == null) "at its morning wake-up time" else "after ${PingProtocol.formatDuration(request.minutes)}") +
-                        ". Until then it cannot receive commands.",
+                    if (request.minutes == null) {
+                        stringResource(R.string.sleep_text_morning)
+                    } else {
+                        stringResource(R.string.sleep_text_for, PingProtocol.formatDuration(res, request.minutes))
+                    },
                 )
             },
             confirmButton = {
@@ -1237,10 +1248,10 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                         PingProtocol.SLEEP_ACTION,
                         PingProtocol.sleepCommand(request.minutes),
                     )
-                }) { Text("Sleep") }
+                }) { Text(stringResource(R.string.sleep_action)) }
             },
             dismissButton = {
-                TextButton(onClick = { sleepRequest = null }) { Text("Cancel") }
+                TextButton(onClick = { sleepRequest = null }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
@@ -1249,27 +1260,27 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     val torrentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             val request = IncomingDownloads.readTorrent(context, uri)
-            if (request != null) sendDownload(request) else error = "That file isn't a torrent (or is over 2 MB)."
+            if (request != null) sendDownload(request) else error = res.getString(R.string.dl_not_torrent)
         }
     }
 
     // Anything arriving from another app waits for an explicit "Download".
     incomingDownload?.let { incoming ->
         val what = when (incoming.source) {
-            DownloadProtocol.SOURCE_MAGNET -> "Magnet link"
-            DownloadProtocol.SOURCE_TORRENT_FILE -> "Torrent file"
-            else -> "Link: " + (incoming.url ?: "").take(160)
+            DownloadProtocol.SOURCE_MAGNET -> stringResource(R.string.dl_kind_magnet)
+            DownloadProtocol.SOURCE_TORRENT_FILE -> stringResource(R.string.dl_kind_torrent)
+            else -> stringResource(R.string.dl_kind_link, (incoming.url ?: "").take(160))
         }
         AlertDialog(
             onDismissRequest = {
                 IncomingDownloads.pending.value = null
                 AppLog.info("Downloads", "Cancelled \"${incoming.displayName}\"")
             },
-            title = { Text("Download on the server computer?") },
+            title = { Text(stringResource(R.string.dl_confirm_title)) },
             text = {
                 Text(
                     "\"${incoming.displayName}\"\n$what" +
-                        if (canSend) "" else "\n\nNot ready yet - the server computer is busy or not connected. Try again in a moment.",
+                        if (canSend) "" else "\n\n" + stringResource(R.string.dl_not_ready),
                 )
             },
             confirmButton = {
@@ -1282,13 +1293,13 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                         selectedCategory = Category.DOWNLOADS
                         if (openCategory != null) openCategoryFolder(Category.DOWNLOADS)
                     },
-                ) { Text("Download") }
+                ) { Text(stringResource(R.string.dl_action)) }
             },
             dismissButton = {
                 TextButton(onClick = {
                     IncomingDownloads.pending.value = null
                     AppLog.info("Downloads", "Cancelled \"${incoming.displayName}\"")
-                }) { Text("Cancel") }
+                }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
@@ -1296,11 +1307,10 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     if (shutdownRequested) {
         AlertDialog(
             onDismissRequest = { shutdownRequested = false },
-            title = { Text("Shut the computer down completely?") },
+            title = { Text(stringResource(R.string.sd_title)) },
             text = {
                 Text(
-                    "It powers off immediately, with no delay. Unlike Sleep, it will " +
-                        "NOT wake up on its own - you need physical access to turn it back on.",
+                    stringResource(R.string.sd_text),
                 )
             },
             confirmButton = {
@@ -1311,10 +1321,10 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                         PingProtocol.SHUTDOWN_ACTION,
                         PingProtocol.shutdownCommand(),
                     )
-                }) { Text("Shut down", color = GlassColors.Red) }
+                }) { Text(stringResource(R.string.sd_action), color = GlassColors.Red) }
             },
             dismissButton = {
-                TextButton(onClick = { shutdownRequested = false }) { Text("Cancel") }
+                TextButton(onClick = { shutdownRequested = false }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
@@ -1343,13 +1353,13 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     AppLog.info("Network", if (value == null) "Name removed from ${device.mac}" else "Named ${device.mac} \"$value\"")
                 }
                 .addOnFailureListener { exception ->
-                    error = exception.localizedMessage ?: "Could not save the name."
+                    error = exception.localizedMessage ?: res.getString(R.string.err_save_name)
                     AppLog.error("Network", "Could not save the name of ${device.mac}: $error")
                 }
         }
         AlertDialog(
             onDismissRequest = { renaming = null },
-            title = { Text("Name this device") },
+            title = { Text(stringResource(R.string.name_device_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
@@ -1360,20 +1370,20 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     GlassTextField(
                         value = newName,
                         onValueChange = { value -> if (value.length <= MAX_DEVICE_NAME_LENGTH) newName = value.replace('\n', ' ') },
-                        label = "Name",
+                        label = stringResource(R.string.name_label),
                         singleLine = true,
                     )
                 }
             },
             confirmButton = {
-                TextButton(enabled = newName.isNotBlank(), onClick = { finish(newName.trim()) }) { Text("Save") }
+                TextButton(enabled = newName.isNotBlank(), onClick = { finish(newName.trim()) }) { Text(stringResource(R.string.common_save)) }
             },
             dismissButton = {
                 Row {
                     if (deviceNames.containsKey(device.mac)) {
-                        TextButton(onClick = { finish(null) }) { Text("Remove name", color = GlassColors.Red) }
+                        TextButton(onClick = { finish(null) }) { Text(stringResource(R.string.name_remove), color = GlassColors.Red) }
                     }
-                    TextButton(onClick = { renaming = null }) { Text("Cancel") }
+                    TextButton(onClick = { renaming = null }) { Text(stringResource(R.string.common_cancel)) }
                 }
             },
         )
@@ -1382,16 +1392,14 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     if (restartRequested) {
         AlertDialog(
             onDismissRequest = { restartRequested = false },
-            title = { Text("Restart the computer?") },
+            title = { Text(stringResource(R.string.rs_title)) },
             text = {
                 Text(
-                    "It restarts right away and comes back by itself. The agent reconnects once it " +
-                        "is up again." + if (device.platform == "macos") {
-                            " Apps get the chance to save; one with unsaved work can stop the restart " +
-                                "on the Mac's screen."
-                        } else {
-                            ""
-                        },
+                    stringResource(R.string.rs_text) + if (device.platform == "macos") {
+                        " " + stringResource(R.string.rs_text_mac)
+                    } else {
+                        ""
+                    },
                 )
             },
             confirmButton = {
@@ -1399,10 +1407,10 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     restartRequested = false
                     activeButton = "restart"
                     sendCommand(PingProtocol.RESTART_ACTION, PingProtocol.restartCommand())
-                }) { Text("Restart", color = GlassColors.Amber) }
+                }) { Text(stringResource(R.string.rs_action), color = GlassColors.Amber) }
             },
             dismissButton = {
-                TextButton(onClick = { restartRequested = false }) { Text("Cancel") }
+                TextButton(onClick = { restartRequested = false }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
@@ -1410,12 +1418,10 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     if (cancelUpdateRequested) {
         AlertDialog(
             onDismissRequest = { cancelUpdateRequested = false },
-            title = { Text("Cancel the update?") },
+            title = { Text(stringResource(R.string.uc_title)) },
             text = {
                 Text(
-                    "The running step is asked to stop and gets 10 seconds, then whatever is left " +
-                        "is ended. Updates that already finished stay installed; macOS keeps what it " +
-                        "downloaded and finishes or rolls back an install it had begun itself.",
+                    stringResource(R.string.uc_text),
                 )
             },
             confirmButton = {
@@ -1424,10 +1430,10 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     activeButton = "updateCancel"
                     AppLog.info("Update", "Cancel requested")
                     sendCommand(PingProtocol.SYSTEM_UPDATE_CANCEL_ACTION, PingProtocol.systemUpdateCancelCommand())
-                }) { Text("Cancel update", color = GlassColors.Red) }
+                }) { Text(stringResource(R.string.uc_action), color = GlassColors.Red) }
             },
             dismissButton = {
-                TextButton(onClick = { cancelUpdateRequested = false }) { Text("Keep going") }
+                TextButton(onClick = { cancelUpdateRequested = false }) { Text(stringResource(R.string.uc_keep)) }
             },
         )
     }
@@ -1437,7 +1443,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     // cards differently without duplicating any of them.
     val reorderButton: @Composable () -> Unit = {
         GlassIconButton(
-            description = if (reordering) "Finish reordering" else "Reorder",
+            description = if (reordering) stringResource(R.string.reorder_finish) else stringResource(R.string.reorder),
             onClick = { toggleReordering() },
             active = reordering,
         ) { tint -> drawReorderIcon(tint) }
@@ -1446,7 +1452,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     val reorderHint: @Composable () -> Unit = {
         if (reordering) {
             Text(
-                "Hold a card and drag it to move it. Tap the reorder button again to save.",
+                stringResource(R.string.reorder_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = LocalGlassPalette.current.inkMuted,
             )
@@ -1484,7 +1490,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 reorderButton()
-                GlassChip("Computers", onClick = onDeviceMenu)
+                GlassChip(stringResource(R.string.computers_title), onClick = onDeviceMenu)
             }
         }
     }
@@ -1539,13 +1545,13 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
 
     val pingCard: @Composable () -> Unit = {
         GlassCommandCard(
-            title = "Ping",
+            title = stringResource(R.string.ping_title),
             tag = PingProtocol.ACTION,
-            description = "Check that the agent is alive. It answers with PONG.",
+            description = stringResource(R.string.ping_desc),
             accent = GlassColors.Blue,
         ) {
             GlassButton(
-                text = "Send PING",
+                text = stringResource(R.string.ping_send),
                 accent = GlassColors.Blue,
                 enabled = canSend,
                 loading = sending && commandAction == PingProtocol.ACTION,
@@ -1581,16 +1587,16 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             }
         }
         GlassCommandCard(
-            title = "Speak",
+            title = stringResource(R.string.speak_title),
             tag = PingProtocol.SPEAK_ACTION,
-            description = "The computer reads your text out loud.",
+            description = stringResource(R.string.speak_desc),
             accent = GlassColors.Indigo,
             headerAction = {
                 GlassContentButton(
                     description = if (english) {
-                        "Speech language: English. Tap for Turkish."
+                        stringResource(R.string.speak_lang_en)
                     } else {
-                        "Speech language: Turkish. Tap for English."
+                        stringResource(R.string.speak_lang_tr)
                     },
                     onClick = {
                         val next = if (english) PingProtocol.LANGUAGE_TR else PingProtocol.LANGUAGE_EN
@@ -1610,7 +1616,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     val line = value.replace('\n', ' ').replace('\r', ' ')
                     if (line.length <= PingProtocol.MAX_SPEAK_LENGTH) speakText = line
                 },
-                label = if (english) "Text to speak (English)" else "Text to speak (Türkçe)",
+                label = if (english) stringResource(R.string.speak_label_en) else stringResource(R.string.speak_label_tr),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { sendSpeak() }),
@@ -1625,7 +1631,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 color = LocalGlassPalette.current.inkFaint,
             )
             GlassButton(
-                text = "Send SPEAK",
+                text = stringResource(R.string.speak_send),
                 accent = GlassColors.Indigo,
                 enabled = canSend && speakText.isNotBlank(),
                 loading = sending && commandAction == PingProtocol.SPEAK_ACTION,
@@ -1680,9 +1686,9 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             favoriteApps = updated
             saveFavorites()
             val message = when (change) {
-                FavoriteApps.Change.ADDED -> "${app.name} added to Favorites"
-                FavoriteApps.Change.REMOVED -> "${app.name} removed from Favorites"
-                FavoriteApps.Change.FULL -> "Favorites are full. Add a row in Settings (swipe up on the bottom bar)."
+                FavoriteApps.Change.ADDED -> res.getString(R.string.fav_added, app.name)
+                FavoriteApps.Change.REMOVED -> res.getString(R.string.fav_removed, app.name)
+                FavoriteApps.Change.FULL -> res.getString(R.string.fav_full)
             }
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         }
@@ -1702,7 +1708,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                                 working = activeButton == "app-${app.bundleId}" && commandPending,
                                 onClick = { openApp(app) },
                                 onLongClick = { toggleFavorite(app) },
-                                longClickLabel = if (app.bundleId in favoriteApps) "Remove from Favorites" else "Add to Favorites",
+                                longClickLabel = if (app.bundleId in favoriteApps) stringResource(R.string.fav_remove_label) else stringResource(R.string.fav_add_label),
                                 editing = section != null && editingSection == section,
                                 removing = section != null && "$section:${app.bundleId}" in removingApps,
                                 onRemove = { section?.let { removeFrom(it, app) } },
@@ -1716,15 +1722,15 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         }
 
         GlassCommandCard(
-            title = "Apps",
+            title = stringResource(R.string.settings_apps),
             tag = PingProtocol.OPEN_APP_ACTION,
-            description = "Opens an app on the computer, or brings it to the front if it's already open.",
+            description = stringResource(R.string.apps_desc),
             accent = GlassColors.Indigo,
         ) {
             val all = serverApps
             if (all == null) {
                 Text(
-                    "The list appears once the computer has sent it.",
+                    stringResource(R.string.apps_waiting),
                     style = MaterialTheme.typography.bodySmall,
                     color = palette.inkMuted,
                 )
@@ -1735,10 +1741,10 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                         appQuery = it.take(60)
                         editingSection = null // searching hides Favorites and Recent
                     },
-                    placeholder = "Search ${all.size} apps",
+                    placeholder = pluralStringResource(R.plurals.apps_search, all.size, all.size),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    clearDescription = "Clear the search",
+                    clearDescription = stringResource(R.string.search_clear),
                 )
                 if (appQuery.isBlank()) {
                     // A pencil at the card's right edge edits a row; it turns into a check mark.
@@ -1747,7 +1753,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                         val editing = editingSection == section
                         GlassIconAction(
                             if (editing) Icons.Outlined.Check else Icons.Outlined.Edit,
-                            if (editing) "Done" else "Edit $what",
+                            if (editing) stringResource(R.string.common_done) else what,
                             onClick = { editingSection = if (editing) null else section },
                         )
                     }
@@ -1756,8 +1762,8 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     val capacity = favoriteRows * APPS_PER_ROW
                     val favorites = FavoriteApps.shown(all, favoriteApps)
                     val deck = favorites.take(capacity)
-                    GlassSectionHeader("Favorites", action = if (deck.isNotEmpty()) {
-                        { editAction(AppSection.FAVORITES, "favorites") }
+                    GlassSectionHeader(stringResource(R.string.apps_favorites), action = if (deck.isNotEmpty()) {
+                        { editAction(AppSection.FAVORITES, stringResource(R.string.apps_edit_favorites)) }
                     } else {
                         null
                     })
@@ -1768,7 +1774,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     )
                     if (favorites.size > capacity) {
                         Text(
-                            "${favorites.size - capacity} more don't fit. Add a row in Settings (swipe up on the bottom bar).",
+                            pluralStringResource(R.plurals.apps_more_dont_fit, favorites.size - capacity, favorites.size - capacity),
                             style = MaterialTheme.typography.bodySmall,
                             color = palette.inkMuted,
                         )
@@ -1776,21 +1782,21 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
 
                     val recent = ServerApps.recent(all, recentApps).take(APP_GRID_COLUMNS)
                     if (recent.isNotEmpty()) {
-                        GlassSectionHeader("Recent", action = { editAction(AppSection.RECENT, "recent apps") })
+                        GlassSectionHeader(stringResource(R.string.apps_recent), action = { editAction(AppSection.RECENT, stringResource(R.string.apps_edit_recent)) })
                         appGrid(recent, section = AppSection.RECENT)
                     }
-                    GlassSectionHeader("All apps")
+                    GlassSectionHeader(stringResource(R.string.apps_all))
                     val sorted = ServerApps.search(all, "")
                     appGrid(if (showAllApps) sorted else sorted.take(ServerApps.COLLAPSED_COUNT))
                     if (sorted.size > ServerApps.COLLAPSED_COUNT) {
                         TextButton(onClick = { showAllApps = !showAllApps }) {
-                            Text(if (showAllApps) "Show fewer" else "Show all ${sorted.size} apps")
+                            Text(if (showAllApps) stringResource(R.string.apps_show_fewer) else pluralStringResource(R.plurals.apps_show_all, sorted.size, sorted.size))
                         }
                     }
                 } else {
                     val matches = ServerApps.search(all, appQuery)
                     if (matches.isEmpty()) {
-                        Text("No app matches \"${appQuery.trim()}\".", style = MaterialTheme.typography.bodySmall,
+                        Text(stringResource(R.string.apps_no_match, appQuery.trim()), style = MaterialTheme.typography.bodySmall,
                             color = palette.inkMuted)
                     } else {
                         appGrid(matches)
@@ -1798,7 +1804,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 }
             }
             Text(
-                "Press and hold an app to add it to Favorites or take it off.",
+                stringResource(R.string.apps_hold_hint),
                 style = MaterialTheme.typography.labelSmall,
                 color = palette.inkFaint,
             )
@@ -1808,7 +1814,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     activeButton = "apps-refresh"
                     sendCommand(PingProtocol.LIST_APPS_ACTION, PingProtocol.listAppsCommand())
                 },
-            ) { Text("Refresh the list") }
+            ) { Text(stringResource(R.string.apps_refresh)) }
         }
     }
 
@@ -1822,16 +1828,16 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             }
         }
         GlassCommandCard(
-            title = "Media",
+            title = stringResource(R.string.media_title),
             tag = PingProtocol.MEDIA_ACTION,
-            description = "Controls whatever is playing on the computer: music, videos, a browser tab.",
+            description = stringResource(R.string.media_desc),
             accent = GlassColors.Violet,
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf<Triple<String, String, DrawScope.(Color) -> Unit>>(
-                    Triple(PingProtocol.MEDIA_PREVIOUS, "Previous track", { drawPreviousTrackIcon(it) }),
-                    Triple(PingProtocol.MEDIA_PLAY_PAUSE, "Play or pause", { drawPlayPauseIcon(it) }),
-                    Triple(PingProtocol.MEDIA_NEXT, "Next track", { drawNextTrackIcon(it) }),
+                    Triple(PingProtocol.MEDIA_PREVIOUS, stringResource(R.string.media_previous), { drawPreviousTrackIcon(it) }),
+                    Triple(PingProtocol.MEDIA_PLAY_PAUSE, stringResource(R.string.media_play_pause), { drawPlayPauseIcon(it) }),
+                    Triple(PingProtocol.MEDIA_NEXT, stringResource(R.string.media_next), { drawNextTrackIcon(it) }),
                 ).forEach { (kind, label, icon) ->
                     val button = "media-$kind"
                     GlassButton(
@@ -1862,18 +1868,19 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             }
             val shown = volumeDraft ?: volumeTarget?.toFloat() ?: mediaVolume?.toFloat() ?: 0f
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Volume", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Text(stringResource(R.string.media_volume), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 Text(
                     when {
-                        volumeDraft != null || volumeTarget != null -> "${shown.roundToInt()}%"
-                        mediaVolume == null -> "Not reported yet"
-                        mediaMuted -> "Muted (${mediaVolume}%)"
-                        else -> "${mediaVolume}%"
+                        volumeDraft != null || volumeTarget != null -> stringResource(R.string.media_percent, shown.roundToInt())
+                        mediaVolume == null -> stringResource(R.string.media_not_reported)
+                        mediaMuted -> stringResource(R.string.media_muted, mediaVolume ?: 0)
+                        else -> stringResource(R.string.media_percent, mediaVolume ?: 0)
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = LocalGlassPalette.current.inkMuted,
                 )
             }
+            val outputVolumeLabel = stringResource(R.string.media_output_volume)
             Slider(
                 value = shown,
                 onValueChange = { volumeDraft = it },
@@ -1896,7 +1903,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .semantics { contentDescription = "Output volume" },
+                    .semantics { contentDescription = outputVolumeLabel },
             )
         }
     }
@@ -1909,20 +1916,18 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         val canRestart = device.supports("restart")
         val palette = LocalGlassPalette.current
         GlassCommandCard(
-            title = "Power",
-            tag = "POWER",
+            title = stringResource(R.string.cat_power),
+            tag = stringResource(R.string.tag_power),
             description = when {
-                serverAsleep ->
-                    "The computer is asleep. Restart and Shut down only run right away, so send them while it's awake."
-                cycleRuns -> "Sleep isn't needed in power save: the computer already sleeps between checks."
-                else -> "Sleep wakes up by itself. Restart comes back by itself. Shut down needs someone " +
-                    "at the computer to turn it on again."
+                serverAsleep -> stringResource(R.string.power_asleep_hint)
+                cycleRuns -> stringResource(R.string.power_cycle_hint)
+                else -> stringResource(R.string.power_hint)
             },
             accent = GlassColors.Violet,
         ) {
             if (canSleep) {
                 GlassButton(
-                    text = "Sleep until morning",
+                    text = stringResource(R.string.sleep_until_morning),
                     accent = GlassColors.Violet,
                     enabled = canSend && !cycleRuns,
                     working = activeButton == "sleep-morning" && commandPending,
@@ -1932,7 +1937,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     },
                 )
                 Text(
-                    "Or sleep for a set time",
+                    stringResource(R.string.sleep_set_time),
                     style = MaterialTheme.typography.labelLarge,
                     color = LocalGlassPalette.current.inkMuted,
                 )
@@ -1946,7 +1951,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 ) {
                     listOf(2, 10, 30, 60, 120).forEach { minutes ->
                         GlassChip(
-                            text = PingProtocol.formatDuration(minutes),
+                            text = PingProtocol.formatDuration(res, minutes),
                             onClick = {
                                 sleepHours = (minutes / 60).toString()
                                 sleepMinutes = (minutes % 60).toString()
@@ -1960,7 +1965,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                         onValueChange = { value ->
                             if (value.length <= 2 && value.all { it.isDigit() }) sleepHours = value
                         },
-                        label = "Hours",
+                        label = stringResource(R.string.common_hours),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                         modifier = Modifier.weight(1f),
@@ -1971,7 +1976,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                         onValueChange = { value ->
                             if (value.length <= 2 && value.all { it.isDigit() }) sleepMinutes = value
                         },
-                        label = "Minutes",
+                        label = stringResource(R.string.common_minutes),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                         modifier = Modifier.weight(1f),
@@ -1979,8 +1984,11 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     )
                 }
                 GlassButton(
-                    text = if (sleepTotalValid) "Sleep for ${PingProtocol.formatDuration(sleepTotal)}"
-                    else "Enter 1 minute to 24 hours",
+                    text = if (sleepTotalValid) {
+                        stringResource(R.string.sleep_for, PingProtocol.formatDuration(res, sleepTotal))
+                    } else {
+                        stringResource(R.string.sleep_range)
+                    },
                     accent = GlassColors.Violet,
                     prominent = false,
                     enabled = canSend && sleepTotalValid && !cycleRuns,
@@ -1998,9 +2006,8 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     if (!commandPending && (reported == caffeinateWanted || commandStatus == "FAILED")) caffeinateWanted = null
                 }
                 GlassSwitchRow(
-                    title = "Caffeinate",
-                    subtitle = "Keeps the Mac awake until you turn it off. The display may still turn off, " +
-                        "and closing the lid still puts it to sleep.",
+                    title = stringResource(R.string.caffeinate_title),
+                    subtitle = stringResource(R.string.caffeinate_help),
                     checked = caffeinateWanted ?: (reported == true),
                     enabled = canSend,
                     working = activeButton == "caffeinate" && commandPending,
@@ -2014,14 +2021,14 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 )
             }
             Text(
-                "Restart or shut down",
+                stringResource(R.string.restart_or_shutdown),
                 style = MaterialTheme.typography.labelLarge,
                 color = palette.inkMuted,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (canRestart) {
                     GlassButton(
-                        text = "Restart",
+                        text = stringResource(R.string.rs_action),
                         accent = GlassColors.Amber,
                         enabled = canSend && !serverAsleep,
                         loading = sending && commandAction == PingProtocol.RESTART_ACTION,
@@ -2031,7 +2038,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     )
                 }
                 GlassButton(
-                    text = "Shut down",
+                    text = stringResource(R.string.sd_action),
                     accent = GlassColors.Red,
                     enabled = canSend && !serverAsleep,
                     loading = sending && commandAction == PingProtocol.SHUTDOWN_ACTION,
@@ -2045,13 +2052,13 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
 
     val scanCard: @Composable () -> Unit = {
         GlassCommandCard(
-            title = "Scan",
+            title = stringResource(R.string.scan_title),
             tag = PingProtocol.SCAN_ACTION,
-            description = "See who is on the home network right now.",
+            description = stringResource(R.string.scan_desc),
             accent = GlassColors.Neutral,
         ) {
             GlassButton(
-                text = "Send SCAN",
+                text = stringResource(R.string.scan_send),
                 accent = GlassColors.Neutral,
                 enabled = canSend,
                 loading = sending && commandAction == PingProtocol.SCAN_ACTION,
@@ -2069,19 +2076,16 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             (sending || commandStatus in setOf("PENDING", "PROCESSING"))
         val currentMode = powerSnapshot?.powerMode
         GlassCommandCard(
-            title = "Power mode",
+            title = stringResource(R.string.pm_title),
             tag = PingProtocol.POWER_MODE_ACTION,
-            description = "Power save: lowest power draw, desktop off (text mode), and the server " +
-                "computer sleeps - it wakes every few minutes, runs what you sent meanwhile, and " +
-                "sleeps again. SSH and Tailscale can't reach it while it sleeps. Performance keeps " +
-                "it always on, with the desktop.",
+            description = stringResource(R.string.pm_desc),
             accent = GlassColors.Amber,
         ) {
             // The current mode is shown in the "System Info" card; here it only decides
             // which button looks pressed-in (prominent).
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 GlassButton(
-                    text = "Performance",
+                    text = stringResource(R.string.pm_performance),
                     modifier = Modifier.weight(1f),
                     accent = GlassColors.Blue,
                     prominent = currentMode == PingProtocol.MODE_PERFORMANCE,
@@ -2098,7 +2102,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     },
                 )
                 GlassButton(
-                    text = "Power save",
+                    text = stringResource(R.string.pm_powersave),
                     modifier = Modifier.weight(1f),
                     accent = GlassColors.Amber,
                     prominent = currentMode == PingProtocol.MODE_POWERSAVE,
@@ -2116,7 +2120,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 )
             }
             Text(
-                "In power save, check for commands every",
+                stringResource(R.string.pm_interval),
                 style = MaterialTheme.typography.labelLarge,
                 color = LocalGlassPalette.current.inkMuted,
             )
@@ -2131,7 +2135,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             ) {
                 SleepCycle.INTERVALS.forEach { minutes ->
                     GlassChip(
-                        text = "$minutes min",
+                        text = stringResource(R.string.duration_min, minutes),
                         selected = minutes == chosenInterval,
                         accent = GlassColors.Amber,
                         onClick = { if (minutes != savedSleepInterval) saveSleepInterval(minutes) },
@@ -2140,7 +2144,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             }
             if (sleepCycle?.sleeping == true && sleepCycle?.intervalMinutes != chosenInterval) {
                 Text(
-                    "The new interval starts after the next wake-up.",
+                    stringResource(R.string.pm_interval_note),
                     style = MaterialTheme.typography.bodySmall,
                     color = LocalGlassPalette.current.inkFaint,
                 )
@@ -2154,19 +2158,19 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             val context = LocalContext.current
             GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Neutral, cornerRadius = 22.dp) {
                 Text(
-                    "On the network",
+                    stringResource(R.string.on_network),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
                 networkScannedAt?.let { scannedAt ->
                     Text(
-                        "Last scan: ${formatRelativeTime(scannedAt)}",
+                        stringResource(R.string.last_scan, formatRelativeTime(res, scannedAt)),
                         style = MaterialTheme.typography.bodySmall,
                         color = LocalGlassPalette.current.inkMuted,
                     )
                 }
                 Text(
-                    "Tap a device to copy its IP address. Press and hold to give it a name.",
+                    stringResource(R.string.devices_hint),
                     style = MaterialTheme.typography.labelSmall,
                     color = LocalGlassPalette.current.inkFaint,
                 )
@@ -2181,9 +2185,9 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                                     .combinedClickable(
                                         onClick = {
                                             clipboard.setText(AnnotatedString(device.ip))
-                                            Toast.makeText(context, "Copied ${device.ip}", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, context.getString(R.string.common_copied, device.ip), Toast.LENGTH_SHORT).show()
                                         },
-                                        onLongClickLabel = "Name this device",
+                                        onLongClickLabel = stringResource(R.string.name_device_title),
                                         onLongClick = { renaming = device },
                                     ),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -2229,7 +2233,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 ) {
                     shownCategories.forEach { category ->
                         GlassBottomNavItem(
-                            label = category.label,
+                            label = stringResource(category.label),
                             selected = selectedCategory == category,
                             accent = category.accent,
                             onClick = { selectedCategory = category },
@@ -2300,11 +2304,11 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                             ) {
                                 val rows = buildList {
                                     command.sentAtMs?.let {
-                                        add("Sent" to "${timeFormat.format(java.util.Date(it))} (${formatRelativeTime(it)})")
+                                        add("Sent" to "${timeFormat.format(java.util.Date(it))} (${formatRelativeTime(englishRes, it)})")
                                     }
                                     add("Status" to RecentCommands.outcome(command))
-                                    (PingProtocol.describeError(command.errorCode, command.action)
-                                        ?: DownloadProtocol.describeError(command.errorCode))?.let { add("Why" to it) }
+                                    (PingProtocol.describeError(englishRes, command.errorCode, command.action)
+                                        ?: DownloadProtocol.describeError(englishRes, command.errorCode))?.let { add("Why" to it) }
                                     addAll(command.details)
                                     add("ID" to command.id)
                                 }
@@ -2455,14 +2459,13 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     val downloadAddCard: @Composable () -> Unit = {
         val linkRequest = DownloadProtocol.findLink(downloadLink.trim())
         GlassCommandCard(
-            title = "Add download",
+            title = stringResource(R.string.dl_add_title),
             tag = DownloadProtocol.ACTION,
-            description = "A .torrent file, a magnet link or a direct file link - the server computer downloads it to " +
-                "~/Downloads/ComApp. From any app you can also share a link with \"Download on the server computer\".",
+            description = stringResource(R.string.dl_add_desc),
             accent = GlassColors.Indigo,
         ) {
             GlassButton(
-                text = "Choose a .torrent file",
+                text = stringResource(R.string.dl_choose_torrent),
                 accent = GlassColors.Indigo,
                 enabled = canSend,
                 loading = sending && commandAction == DownloadProtocol.ACTION && activeButton == "torrent",
@@ -2475,21 +2478,21 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             GlassTextField(
                 value = downloadLink,
                 onValueChange = { if (it.length <= DownloadProtocol.MAX_URL_LENGTH) downloadLink = it },
-                label = "Magnet or file link",
+                label = stringResource(R.string.dl_link_label),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                 modifier = Modifier.fillMaxWidth(),
-                clearDescription = "Clear the link",
+                clearDescription = stringResource(R.string.dl_link_clear),
             )
             if (downloadLink.isNotBlank() && linkRequest == null) {
                 Text(
-                    "That isn't a magnet or http(s) link.",
+                    stringResource(R.string.dl_bad_link),
                     style = MaterialTheme.typography.bodySmall,
                     color = GlassColors.Red,
                 )
             }
             GlassButton(
-                text = "Download on the server computer",
+                text = stringResource(R.string.download_on_server),
                 accent = GlassColors.Indigo,
                 prominent = false,
                 enabled = canSend && linkRequest != null,
@@ -2509,17 +2512,17 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         val palette = LocalGlassPalette.current
         GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Indigo, cornerRadius = 22.dp) {
             Text(
-                "On the server computer",
+                stringResource(R.string.dl_list_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                downloadsReportedAt?.let { "Updated ${formatRelativeTime(it)}" } ?: "Waiting for the server computer's first report…",
+                downloadsReportedAt?.let { stringResource(R.string.dl_updated, formatRelativeTime(res, it)) } ?: stringResource(R.string.dl_waiting_first),
                 style = MaterialTheme.typography.bodySmall,
                 color = palette.inkMuted,
             )
             if (downloadItems.isEmpty()) {
-                Text("No downloads yet.", style = MaterialTheme.typography.bodySmall, color = palette.inkFaint)
+                Text(stringResource(R.string.dl_none), style = MaterialTheme.typography.bodySmall, color = palette.inkFaint)
             }
             downloadItems.forEach { item ->
                 val stateColor = when (item.state) {
@@ -2530,17 +2533,22 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 }
                 val detail = when (item.state) {
                     "DOWNLOADING" -> buildString {
-                        append(DownloadProtocol.formatBytes(item.doneBytes))
-                        if (item.totalBytes > 0) append(" of ").append(DownloadProtocol.formatBytes(item.totalBytes))
+                        val done = DownloadProtocol.formatBytes(item.doneBytes)
+                        append(
+                            if (item.totalBytes > 0) {
+                                res.getString(R.string.dl_of, done, DownloadProtocol.formatBytes(item.totalBytes))
+                            } else {
+                                done
+                            },
+                        )
                         append(" · ").append(DownloadProtocol.formatSpeed(item.downBps))
-                        item.etaSec?.let { append(" · ").append(DownloadProtocol.formatEta(it)).append(" left") }
+                        item.etaSec?.let { append(" · ").append(res.getString(R.string.dl_left, DownloadProtocol.formatEta(res, it))) }
                     }
-                    "SEEDING" -> "${DownloadProtocol.formatBytes(item.totalBytes)} · sharing " +
-                        "${DownloadProtocol.formatSpeed(item.upBps)} for a few minutes, then done"
-                    "COMPLETE" -> "${DownloadProtocol.formatBytes(item.totalBytes)} · in ~/Downloads/ComApp"
-                    "FAILED" -> DownloadProtocol.describeItemError(item.error)
-                    "QUEUED" -> "Waiting for a free slot"
-                    else -> DownloadProtocol.stateLabel(item.state)
+                    "SEEDING" -> stringResource(R.string.dl_seeding, DownloadProtocol.formatBytes(item.totalBytes), DownloadProtocol.formatSpeed(item.upBps))
+                    "COMPLETE" -> stringResource(R.string.dl_complete, DownloadProtocol.formatBytes(item.totalBytes))
+                    "FAILED" -> DownloadProtocol.describeItemError(res, item.error)
+                    "QUEUED" -> stringResource(R.string.dl_queued_wait)
+                    else -> DownloadProtocol.stateLabel(res, item.state)
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row(
@@ -2554,7 +2562,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            DownloadProtocol.stateLabel(item.state),
+                            DownloadProtocol.stateLabel(res, item.state),
                             style = MaterialTheme.typography.labelSmall,
                             color = stateColor,
                             fontWeight = FontWeight.SemiBold,
@@ -2581,9 +2589,9 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         val chosen = chosenLimitMbps ?: saved ?: DownloadProtocol.DEFAULT_LIMIT_MBPS
         val applied = appliedLimitMbps
         GlassCommandCard(
-            title = "Speed limit",
-            tag = "SETTING",
-            description = "One limit shared by every download on the server computer, torrents and links together.",
+            title = stringResource(R.string.sl_title),
+            tag = stringResource(R.string.tag_setting),
+            description = stringResource(R.string.sl_desc),
             accent = GlassColors.Indigo,
         ) {
             val limitScroll = rememberScrollState()
@@ -2596,7 +2604,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             ) {
                 DownloadProtocol.LIMIT_PRESETS_MBPS.forEach { mbps ->
                     GlassChip(
-                        text = DownloadProtocol.limitLabel(mbps),
+                        text = DownloadProtocol.limitLabel(res, mbps),
                         selected = chosen == mbps,
                         accent = GlassColors.Indigo,
                         onClick = { chosenLimitMbps = mbps },
@@ -2604,7 +2612,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 }
             }
             GlassButton(
-                text = if (chosen == saved) "Applied" else "Apply ${DownloadProtocol.limitLabel(chosen)}",
+                text = if (chosen == saved) stringResource(R.string.sl_applied) else stringResource(R.string.sl_apply, DownloadProtocol.limitLabel(res, chosen)),
                 accent = GlassColors.Indigo,
                 enabled = connected == true && chosen != saved && !applyingLimit,
                 loading = applyingLimit,
@@ -2613,11 +2621,11 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             )
             Text(
                 if (applied == null) {
-                    "The server computer hasn't reported its limit yet."
+                    stringResource(R.string.sl_not_reported)
                 } else if (applied == saved) {
-                    "The server computer is using ${DownloadProtocol.limitLabel(applied)}."
+                    stringResource(R.string.sl_using, DownloadProtocol.limitLabel(res, applied))
                 } else {
-                    "The server computer is still on ${DownloadProtocol.limitLabel(applied)} - it picks up the new one within ~15 s."
+                    stringResource(R.string.sl_still, DownloadProtocol.limitLabel(res, applied))
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = LocalGlassPalette.current.inkMuted,
@@ -2632,10 +2640,10 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         val switching = commandPending && requestedTailscale != null
         val on = requestedTailscale ?: (reported == "RUNNING" || reported == "STARTING")
         val note = when {
-            switching -> if (on) "Turning on…" else "Turning off…"
+            switching -> if (on) stringResource(R.string.ts_turning_on) else stringResource(R.string.ts_turning_off)
             reported == "NOT_INSTALLED" -> "Not installed on the server computer"
             reported == "NEEDS_LOGIN" -> "Needs a login on the server computer"
-            reported == null -> "Waiting for the server computer's report…"
+            reported == null -> stringResource(R.string.waiting_report)
             else -> null
         }
         GlassSwitchRow(
@@ -2660,20 +2668,19 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         val status = systemUpdate
         val palette = LocalGlassPalette.current
         GlassCommandCard(
-            title = "Update server system",
-            tag = "UPDATE",
+            title = stringResource(R.string.upd_title),
+            tag = stringResource(R.string.tag_update),
             description = if (device.platform == "macos") {
-                "App Store apps first, then macOS updates from Software Update. It never restarts " +
-                    "by itself: when an update needs a restart, restart from here when it suits you."
+                stringResource(R.string.upd_desc_mac)
             } else {
-                "Install every available update on the server computer (dnf upgrade)."
+                stringResource(R.string.upd_desc_linux)
             },
             accent = GlassColors.Green,
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     GlassButton(
-                        text = "Update",
+                        text = stringResource(R.string.upd_button),
                         modifier = Modifier.weight(1f),
                         accent = GlassColors.Green,
                         enabled = canSend && status?.running != true,
@@ -2687,7 +2694,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     )
                     if (status?.running == true && device.supports("updateCancel")) {
                         GlassButton(
-                            text = "Cancel",
+                            text = stringResource(R.string.common_cancel),
                             modifier = Modifier.weight(1f),
                             accent = GlassColors.Red,
                             prominent = false,
@@ -2705,10 +2712,10 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             }
             Text(
                 when {
-                    status == null -> "No update has run from the app yet."
-                    status.running -> status.describe()
-                    else -> status.describe() +
-                        (status.finishedAt?.let { " · ${formatRelativeTime(it)}" } ?: "")
+                    status == null -> stringResource(R.string.upd_none)
+                    status.running -> status.describe(res)
+                    else -> status.describe(res) +
+                        (status.finishedAt?.let { " · ${formatRelativeTime(res, it)}" } ?: "")
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = when {
@@ -2717,10 +2724,9 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     else -> palette.inkMuted
                 },
             )
-            status?.stallHint(nowMs)?.let { hint ->
+            status?.stallMinutes(nowMs)?.let { minutes ->
                 Text(
-                    "$hint. It may be waiting for something on the Mac (for example the App Store " +
-                        "sign-in); the output below shows the last thing it did.",
+                    stringResource(R.string.upd_stall, minutes.toInt()),
                     style = MaterialTheme.typography.bodySmall,
                     color = GlassColors.Amber,
                 )
@@ -2728,7 +2734,11 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             val logLines = status?.logLines.orEmpty()
             if (logLines.isNotEmpty()) {
                 Text(
-                    (if (updateLogOpen) "Hide output" else "Show output") + " (${logLines.size} lines)",
+                    pluralStringResource(
+                        if (updateLogOpen) R.plurals.upd_hide_output else R.plurals.upd_show_output,
+                        logLines.size,
+                        logLines.size,
+                    ),
                     style = MaterialTheme.typography.labelMedium,
                     color = GlassColors.Green,
                     maxLines = 1,
@@ -2745,7 +2755,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     )
                     status?.outputAt?.let {
                         Text(
-                            "Last output ${formatRelativeTime(it)}",
+                            stringResource(R.string.upd_last_output, formatRelativeTime(res, it)),
                             style = MaterialTheme.typography.labelSmall,
                             color = palette.inkMuted,
                         )
@@ -2754,7 +2764,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             }
             if (status?.state == "DONE" && status.rebootRecommended == true && device.supports("restart")) {
                 GlassButton(
-                    text = "Restart now",
+                    text = stringResource(R.string.restart_now),
                     accent = GlassColors.Amber,
                     prominent = false,
                     enabled = canSend && !serverAsleep,
@@ -2777,7 +2787,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Amber, cornerRadius = 22.dp) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "History",
+                    stringResource(R.string.hist_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
@@ -2794,28 +2804,28 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 }
             }
             GlassLineChart(
-                title = "CPU usage",
+                title = stringResource(R.string.hist_cpu),
                 points = powerHistory.mapNotNull { sample -> sample.cpu?.let { ChartPoint(sample.timeMs, it) } },
                 startMs = start,
                 endMs = now,
                 accent = GlassColors.Blue,
                 format = { "${"%.0f".format(it)}%" },
                 startLabel = startLabel,
-                endLabel = "now",
+                endLabel = stringResource(R.string.common_now),
                 fixedMax = 100f,
             )
             GlassLineChart(
-                title = "Power draw",
+                title = stringResource(R.string.hist_power),
                 points = powerHistory.mapNotNull { sample -> sample.watts?.let { ChartPoint(sample.timeMs, it) } },
                 startMs = start,
                 endMs = now,
                 accent = GlassColors.Amber,
                 format = { "${"%.1f".format(it)} W" },
                 startLabel = startLabel,
-                endLabel = "now",
+                endLabel = stringResource(R.string.common_now),
             )
             Text(
-                "One sample a minute, kept for a day. CPU package only, like System Info.",
+                stringResource(R.string.hist_note),
                 style = MaterialTheme.typography.labelSmall,
                 color = palette.inkFaint,
             )
@@ -2832,7 +2842,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    "Not available on ${Devices.platformLabel(device.platform)} yet.",
+                    stringResource(R.string.not_available_on, Devices.platformLabel(device.platform)),
                     style = MaterialTheme.typography.bodySmall,
                     color = LocalGlassPalette.current.inkMuted,
                 )
@@ -2912,7 +2922,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     val consoleTools: @Composable () -> Unit = {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
-                "Pick a tool to open it on the right.",
+                stringResource(R.string.pick_tool),
                 style = MaterialTheme.typography.bodySmall,
                 color = LocalGlassPalette.current.inkMuted,
             )
@@ -2934,17 +2944,18 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
         CardId.DEVICES -> if (networkDevices.isEmpty()) {
             null
         } else {
-            "On the network" to "${networkDevices.size} device${if (networkDevices.size == 1) "" else "s"} found"
+            res.getString(R.string.on_network) to
+                res.getQuantityString(R.plurals.devices_found, networkDevices.size, networkDevices.size)
         }
         CardId.DOWNLOAD_LIST -> {
             val active = downloadItems.count { it.state == "DOWNLOADING" || it.state == "QUEUED" }
-            "On the server computer" to when {
-                downloadItems.isEmpty() -> "No downloads yet"
-                active > 0 -> "$active active · ${downloadItems.size} in the list"
-                else -> "${downloadItems.size} in the list"
+            res.getString(R.string.dl_list_title) to when {
+                downloadItems.isEmpty() -> res.getString(R.string.dl_none_short)
+                active > 0 -> res.getString(R.string.dl_active, active, downloadItems.size)
+                else -> res.getString(R.string.dl_in_list, downloadItems.size)
             }
         }
-        CardId.POWER_HISTORY -> "History" to "CPU usage and power draw"
+        CardId.POWER_HISTORY -> res.getString(R.string.hist_title) to res.getString(R.string.hist_summary)
         else -> null
     }
 
@@ -3047,7 +3058,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             ) {
                 header()
                 Text(
-                    "Categories",
+                    stringResource(R.string.categories),
                     style = MaterialTheme.typography.labelLarge,
                     color = LocalGlassPalette.current.inkMuted,
                 )
@@ -3064,8 +3075,8 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     modifier = Modifier.fillMaxWidth(),
                 ) { category ->
                     GlassFolderRow(
-                        title = category.label,
-                        subtitle = category.contents,
+                        title = stringResource(category.label),
+                        subtitle = stringResource(category.contents),
                         accent = category.accent,
                         // The list is invisible (alpha 0) while a folder is open; don't let a
                         // tap on that invisible list open another one underneath.
@@ -3088,10 +3099,10 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            GlassChip("‹  Categories", onClick = { closeCategoryFolder() })
+                            GlassChip("‹  " + stringResource(R.string.categories), onClick = { closeCategoryFolder() })
                             Spacer(Modifier.width(12.dp))
                             Text(
-                                category.label,
+                                stringResource(category.label),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.weight(1f),
@@ -3136,7 +3147,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                             }
                             else -> Toast.makeText(
                                 context,
-                                "Can't refresh right now - another command is running or there's no connection.",
+                                stringResource(R.string.cant_refresh),
                                 Toast.LENGTH_SHORT,
                             ).show()
                         }
@@ -3146,7 +3157,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "System Info",
+                        stringResource(R.string.sysinfo_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.weight(1f),
@@ -3171,8 +3182,8 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 }
                 Text(
                     buildString {
-                        power.reportedAt?.let { append("Last report: ").append(formatRelativeTime(it)).append(" · ") }
-                        append(if (refreshingInfo) "Refreshing…" else "Tap to refresh")
+                        power.reportedAt?.let { append(res.getString(R.string.si_last_report, formatRelativeTime(res, it))).append(" · ") }
+                        append(res.getString(if (refreshingInfo) R.string.si_refreshing else R.string.si_tap_refresh))
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = palette.inkMuted,
@@ -3180,20 +3191,19 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     power.powerMode?.let {
                         val label = when (it) {
-                            PingProtocol.MODE_POWERSAVE -> "Power save"
-                            PingProtocol.MODE_PERFORMANCE -> "Performance"
-                            else -> "Unknown"
+                            PingProtocol.MODE_POWERSAVE -> stringResource(R.string.pm_powersave)
+                            PingProtocol.MODE_PERFORMANCE -> stringResource(R.string.pm_performance)
+                            else -> stringResource(R.string.common_unknown)
                         }
-                        Text("Power mode: $label", fontWeight = FontWeight.Medium)
+                        Text(stringResource(R.string.si_power_mode, label), fontWeight = FontWeight.Medium)
                     }
-                    power.usagePercent?.let { Text("CPU usage: ${"%.1f".format(it)}%") }
-                    power.tempC?.let { Text("CPU temperature: $it°C") }
+                    power.usagePercent?.let { Text(stringResource(R.string.si_cpu_usage, "%.1f".format(it))) }
+                    power.tempC?.let { Text(stringResource(R.string.si_cpu_temp, it.toString())) }
                     power.packageWatts?.let { watts ->
-                        Text("Package power: ${"%.1f".format(watts)} W")
+                        Text(stringResource(R.string.si_package_power, "%.1f".format(watts)))
                         val costPerHourEur = watts / 1000.0 * ELECTRICITY_PRICE_EUR_PER_KWH
                         Text(
-                            "Estimated cost: ${"%.2f".format(costPerHourEur * 100)} ¢/hour " +
-                                "(~€${"%.2f".format(costPerHourEur * 24)}/day at this rate)",
+                            stringResource(R.string.si_cost, "%.2f".format(costPerHourEur * 100), "%.2f".format(costPerHourEur * 24)),
                             style = MaterialTheme.typography.bodySmall,
                             color = LocalGlassPalette.current.inkMuted,
                         )
@@ -3201,23 +3211,21 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     if (power.coreFreqMhz.isNotEmpty()) {
                         val avgGhz = power.coreFreqMhz.average() / 1000
                         Text(
-                            "Core frequency (avg): ${"%.1f".format(avgGhz)} GHz " +
-                                "(${power.coreFreqMhz.size} cores)",
+                            stringResource(R.string.si_freq, "%.1f".format(avgGhz), power.coreFreqMhz.size.toString()),
                         )
                     }
-                    power.batteryPercent?.let { Text("Battery: $it%") }
-                    power.fanRpm?.let { Text("Fan: $it RPM") }
-                    power.ecTempC?.let { Text("EC temperature: $it°C") }
-                    PingProtocol.tailscaleLabel(power.tailscale)?.let { Text("Tailscale: $it") }
+                    power.batteryPercent?.let { Text(stringResource(R.string.si_battery, it.toString())) }
+                    power.fanRpm?.let { Text(stringResource(R.string.si_fan, it.toString())) }
+                    power.ecTempC?.let { Text(stringResource(R.string.si_ec_temp, it.toString())) }
+                    PingProtocol.tailscaleLabel(res, power.tailscale)?.let { Text(stringResource(R.string.si_tailscale, it)) }
                     when (power.desktop) {
-                        "ON" -> Text("Desktop: On")
-                        "OFF" -> Text("Desktop: Off (text mode)")
+                        "ON" -> Text(stringResource(R.string.si_desktop_on))
+                        "OFF" -> Text(stringResource(R.string.si_desktop_off))
                         else -> Unit
                     }
                 }
                 Text(
-                    "CPU-side only: RAM, SSD, Wi-Fi/Bluetooth, and any discrete GPU aren't " +
-                        "measurable in software on this hardware.",
+                    stringResource(R.string.si_note),
                     style = MaterialTheme.typography.labelSmall,
                     color = LocalGlassPalette.current.inkFaint,
                 )
@@ -3239,7 +3247,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     Text("Status: ${commandStatus ?: if (sending) "SENDING" else "WAITING"}")
                     if (commandStatus == "FAILED" && errorCode != null) {
                         Text("Error: $errorCode", color = MaterialTheme.colorScheme.error)
-                        (PingProtocol.describeError(errorCode, commandAction) ?: DownloadProtocol.describeError(errorCode))?.let {
+                        (PingProtocol.describeError(englishRes, errorCode, commandAction) ?: DownloadProtocol.describeError(englishRes, errorCode))?.let {
                             Text(it, color = MaterialTheme.colorScheme.error)
                         }
                     }
@@ -3493,11 +3501,11 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     dataRef("network/aliases").updateChildren(names.mapValues { it.value as Any })
                         .addOnSuccessListener {
                             AppLog.info("Network", "Imported ${names.size} device names")
-                            done("Saved ${names.size} names. They show up in \"On the network\" right away.")
+                            done(Result.success(names.size))
                         }
                         .addOnFailureListener { exception ->
                             AppLog.error("Network", "Could not import device names: ${exception.localizedMessage}")
-                            done("Could not save the names: ${exception.localizedMessage ?: "unknown error"}")
+                            done(Result.failure(exception))
                         }
                 },
                 appVersion = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
@@ -3508,6 +3516,11 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     developerMode = on
                     settingsPrefs.edit().putBoolean("developerMode", on).apply()
                     AppLog.info("Settings", "Developer Mode " + if (on) "on" else "off")
+                },
+                language = AppLanguage.current(context),
+                onLanguage = { language ->
+                    AppLog.info("Settings", "Language set to ${language.name}")
+                    AppLanguage.apply(context, language)
                 },
             ),
         )
@@ -3526,13 +3539,13 @@ private fun statusColor(status: String?): Color = when (status) {
     else -> GlassColors.Amber
 }
 
-private fun formatRelativeTime(epochMillis: Long): String {
+private fun formatRelativeTime(res: Resources, epochMillis: Long): String {
     val seconds = (System.currentTimeMillis() - epochMillis) / 1000
     return when {
-        seconds < 60 -> "just now"
-        seconds < 3_600 -> "${seconds / 60} min ago"
-        seconds < 86_400 -> "${seconds / 3_600} h ago"
-        else -> "${seconds / 86_400} d ago"
+        seconds < 60 -> res.getString(R.string.time_just_now)
+        seconds < 3_600 -> res.getString(R.string.time_min_ago, (seconds / 60).toInt())
+        seconds < 86_400 -> res.getString(R.string.time_h_ago, (seconds / 3_600).toInt())
+        else -> res.getString(R.string.time_d_ago, (seconds / 86_400).toInt())
     }
 }
 
@@ -3631,7 +3644,7 @@ internal fun AppTile(
             // even while the computer can't take commands: it only changes Favorites.
             .combinedClickable(
                 enabled = !editing,
-                onClickLabel = "Open ${app.name}",
+                onClickLabel = stringResource(R.string.apps_open, app.name),
                 onClick = { if (enabled) onClick() },
                 onLongClickLabel = longClickLabel,
                 onLongClick = onLongClick,
@@ -3658,7 +3671,7 @@ internal fun AppTile(
                     Modifier
                         .size(24.dp)
                         .clip(CircleShape)
-                        .clickable(enabled = !removing, onClickLabel = "Remove ${app.name} from Recent", onClick = onRemove),
+                        .clickable(enabled = !removing, onClickLabel = stringResource(R.string.apps_remove_recent, app.name), onClick = onRemove),
                     contentAlignment = Alignment.Center,
                 ) {
                     Box(
@@ -3670,7 +3683,7 @@ internal fun AppTile(
                     ) {
                         Icon(
                             Icons.Filled.Close,
-                            contentDescription = "Remove ${app.name} from Recent",
+                            contentDescription = stringResource(R.string.apps_remove_recent, app.name),
                             tint = Color.White,
                             modifier = Modifier.size(12.dp),
                         )
@@ -3697,7 +3710,7 @@ internal fun AddAppSlot(onClick: () -> Unit, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
-            .clickable(onClickLabel = "Add a favorite app", onClick = onClick)
+            .clickable(onClickLabel = stringResource(R.string.apps_add_favorite), onClick = onClick)
             .padding(vertical = 6.dp, horizontal = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -3711,7 +3724,7 @@ internal fun AddAppSlot(onClick: () -> Unit, modifier: Modifier = Modifier) {
             Icon(Icons.Filled.Add, contentDescription = null, tint = palette.inkFaint, modifier = Modifier.size(20.dp))
         }
         Spacer(Modifier.height(4.dp))
-        Text("Add", style = MaterialTheme.typography.labelSmall, color = palette.inkFaint)
+        Text(stringResource(R.string.apps_add_short), style = MaterialTheme.typography.labelSmall, color = palette.inkFaint)
     }
 }
 
@@ -3724,14 +3737,14 @@ internal fun FavoritePicker(apps: List<ServerApp>, favorites: List<String>, onPi
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add to Favorites") },
+        title = { Text(stringResource(R.string.fav_add_label)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 GlassTextField(
                     value = query,
                     onValueChange = { query = it.take(60) },
-                    placeholder = "Search apps",
-                    clearDescription = "Clear the search",
+                    placeholder = stringResource(R.string.apps_search_short),
+                    clearDescription = stringResource(R.string.search_clear),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 LazyColumn(Modifier.heightIn(max = 360.dp)) {
@@ -3740,7 +3753,7 @@ internal fun FavoritePicker(apps: List<ServerApp>, favorites: List<String>, onPi
                             Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
-                                .clickable(onClickLabel = "Add ${app.name}") { onPick(app) }
+                                .clickable(onClickLabel = stringResource(R.string.apps_add_one, app.name)) { onPick(app) }
                                 .padding(vertical = 6.dp, horizontal = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -3752,14 +3765,14 @@ internal fun FavoritePicker(apps: List<ServerApp>, favorites: List<String>, onPi
                 }
                 if (choices.isEmpty()) {
                     Text(
-                        if (query.isBlank()) "Every app is already a favorite." else "No app matches \"${query.trim()}\".",
+                        if (query.isBlank()) stringResource(R.string.apps_all_favorite) else stringResource(R.string.apps_no_match, query.trim()),
                         style = MaterialTheme.typography.bodySmall,
                         color = LocalGlassPalette.current.inkMuted,
                     )
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_close)) } },
     )
 }
 

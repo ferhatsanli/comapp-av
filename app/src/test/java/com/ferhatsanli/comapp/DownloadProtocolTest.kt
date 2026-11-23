@@ -3,8 +3,15 @@ package com.ferhatsanli.comapp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class DownloadProtocolTest {
+    private val res get() = RuntimeEnvironment.getApplication().resources
     @Test
     fun aSharedPageTitlePlusLinkYieldsTheLink() {
         val found = DownloadProtocol.findLink("Ubuntu 26.04 LTS https://releases.ubuntu.com/26.04/ubuntu-26.04-desktop-amd64.iso")!!
@@ -83,19 +90,19 @@ class DownloadProtocolTest {
     @Test
     fun everyErrorCodeTheAgentSendsHasAMessage() {
         for (code in listOf("NOT_A_FILE", "NO_SPACE", "BAD_INPUT", "ENGINE_DOWN")) {
-            assert(DownloadProtocol.describeError(code) != null) { code }
+            assert(DownloadProtocol.describeError(res, code) != null) { code }
         }
-        assertNull(DownloadProtocol.describeError("AGENT_ERROR"))
+        assertNull(DownloadProtocol.describeError(res, "AGENT_ERROR"))
     }
 
     @Test
     fun everyPerDownloadErrorTheAgentReportsReadsAsASentence() {
         for (code in listOf("NETWORK", "TIMEOUT", "HTTP_ERROR", "DISK")) {
-            assert(DownloadProtocol.describeItemError(code).endsWith(".")) { code }
+            assert(DownloadProtocol.describeItemError(res, code).endsWith(".")) { code }
         }
-        assertEquals("Torrent error (aria2 code 3).", DownloadProtocol.describeItemError("ARIA2_3"))
-        assertEquals("Download error (curl code 35).", DownloadProtocol.describeItemError("CURL_35"))
-        assertEquals("Failed.", DownloadProtocol.describeItemError(null))
+        assertEquals("Torrent error (aria2 code 3).", DownloadProtocol.describeItemError(res, "ARIA2_3"))
+        assertEquals("Download error (curl code 35).", DownloadProtocol.describeItemError(res, "CURL_35"))
+        assertEquals("Failed.", DownloadProtocol.describeItemError(res, null))
     }
 
     @Test
@@ -105,9 +112,9 @@ class DownloadProtocolTest {
         assertEquals("1.5 KB", DownloadProtocol.formatBytes(1536))
         assertEquals("6.0 GB", DownloadProtocol.formatBytes(6L * 1024 * 1024 * 1024))
         assertEquals("2.4 MB/s", DownloadProtocol.formatSpeed(2_516_582))
-        assertEquals("45 s", DownloadProtocol.formatEta(45))
-        assertEquals("12 min", DownloadProtocol.formatEta(12 * 60 + 5))
-        assertEquals("1 h 5 min", DownloadProtocol.formatEta(3900))
+        assertEquals("45 s", DownloadProtocol.formatEta(res, 45))
+        assertEquals("12 min", DownloadProtocol.formatEta(res, 12 * 60 + 5))
+        assertEquals("1 h 5 min", DownloadProtocol.formatEta(res, 3900))
     }
 
     @Test
@@ -118,7 +125,7 @@ class DownloadProtocolTest {
         assertEquals(20, DownloadProtocol.parseLimit(2.5))
         assertEquals(20, DownloadProtocol.parseLimit(-1L))
         assertEquals(20, DownloadProtocol.parseLimit("50"))
-        assertEquals("Unlimited", DownloadProtocol.limitLabel(0))
-        assertEquals("20 Mbit/s", DownloadProtocol.limitLabel(20))
+        assertEquals("Unlimited", DownloadProtocol.limitLabel(res, 0))
+        assertEquals("20 Mbit/s", DownloadProtocol.limitLabel(res, 20))
     }
 }

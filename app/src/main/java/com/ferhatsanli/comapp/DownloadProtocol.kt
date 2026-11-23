@@ -1,10 +1,12 @@
 package com.ferhatsanli.comapp
 
+import android.content.res.Resources
 import java.net.URLDecoder
 import java.util.Base64
 import java.util.Locale
 
-// Plain Kotlin with no Android dependency on purpose, so it can be unit-tested on the JVM.
+// Plain Kotlin apart from reading texts from Resources, so it can be unit-tested on the JVM
+// (Robolectric supplies the Resources).
 
 /** Something to download on the server computer: a magnet link, a direct link, or an uploaded .torrent file. */
 internal data class DownloadRequest(
@@ -76,38 +78,37 @@ internal object DownloadProtocol {
     fun upload(request: DownloadRequest): Map<String, String>? = request.torrentBase64?.let { mapOf("torrent" to it) }
 
     /** The agent's specific DOWNLOAD_ADD error codes, in words. */
-    fun describeError(code: String?): String? = when (code) {
-        "NOT_A_FILE" -> "That link is a web page, not a file."
-        "NO_SPACE" -> "Not enough free space on the server computer for this download."
-        "BAD_INPUT" -> "The server computer couldn't use that link or torrent - it may be broken or invalid."
-        "ENGINE_DOWN" -> "The torrent engine (aria2) isn't running on the server computer. Set it up once: " +
-            "install-macos-downloads.sh on a Mac, install-downloads.sh on Linux. Plain links work without it."
+    fun describeError(res: Resources, code: String?): String? = when (code) {
+        "NOT_A_FILE" -> R.string.dl_err_not_a_file
+        "NO_SPACE" -> R.string.dl_err_no_space
+        "BAD_INPUT" -> R.string.dl_err_bad_input
+        "ENGINE_DOWN" -> R.string.dl_err_engine_down
         else -> null
-    }
+    }?.let(res::getString)
 
     /** A single download's failure reason from /downloads/latest, in words. */
-    fun describeItemError(code: String?): String = when {
-        code == null -> "Failed."
-        code == "NETWORK" -> "Network error - the server couldn't be reached."
-        code == "TIMEOUT" -> "The connection stalled for too long."
-        code == "HTTP_ERROR" -> "The server refused the download."
-        code == "DISK" -> "The server computer couldn't write the file."
-        code.startsWith("ARIA2_") -> "Torrent error (aria2 code ${code.removePrefix("ARIA2_")})."
-        code.startsWith("CURL_") -> "Download error (curl code ${code.removePrefix("CURL_")})."
+    fun describeItemError(res: Resources, code: String?): String = when {
+        code == null -> res.getString(R.string.dl_item_failed)
+        code == "NETWORK" -> res.getString(R.string.dl_item_network)
+        code == "TIMEOUT" -> res.getString(R.string.dl_item_timeout)
+        code == "HTTP_ERROR" -> res.getString(R.string.dl_item_http)
+        code == "DISK" -> res.getString(R.string.dl_item_disk)
+        code.startsWith("ARIA2_") -> res.getString(R.string.dl_item_aria2, code.removePrefix("ARIA2_"))
+        code.startsWith("CURL_") -> res.getString(R.string.dl_item_curl, code.removePrefix("CURL_"))
         else -> "$code."
     }
 
-    fun stateLabel(state: String): String = when (state) {
-        "QUEUED" -> "Queued"
-        "DOWNLOADING" -> "Downloading"
-        "SEEDING" -> "Seeding, then done"
-        "COMPLETE" -> "Done"
-        "FAILED" -> "Failed"
-        "PAUSED" -> "Paused"
-        else -> state
-    }
+    fun stateLabel(res: Resources, state: String): String = when (state) {
+        "QUEUED" -> R.string.dl_state_queued
+        "DOWNLOADING" -> R.string.dl_state_downloading
+        "SEEDING" -> R.string.dl_state_seeding
+        "COMPLETE" -> R.string.dl_state_complete
+        "FAILED" -> R.string.dl_state_failed
+        "PAUSED" -> R.string.dl_state_paused
+        else -> null
+    }?.let(res::getString) ?: state
 
-    fun limitLabel(mbps: Int): String = if (mbps <= 0) "Unlimited" else "$mbps Mbit/s"
+    fun limitLabel(res: Resources, mbps: Int): String = if (mbps <= 0) res.getString(R.string.dl_unlimited) else "$mbps Mbit/s"
 
     /** settings/downloadLimitMbps as the phone reads it back; anything odd means the default. */
     fun parseLimit(value: Any?): Int {
@@ -135,12 +136,13 @@ internal object DownloadProtocol {
 
     fun formatSpeed(bytesPerSecond: Long): String = formatBytes(bytesPerSecond) + "/s"
 
-    fun formatEta(seconds: Long): String = when {
-        seconds < 60 -> "$seconds s"
-        seconds < 3600 -> "${seconds / 60} min"
+    fun formatEta(res: Resources, seconds: Long): String = when {
+        seconds < 60 -> res.getString(R.string.duration_s, seconds.toInt())
+        seconds < 3600 -> res.getString(R.string.duration_min, (seconds / 60).toInt())
         else -> {
-            val minutes = (seconds % 3600) / 60
-            if (minutes == 0L) "${seconds / 3600} h" else "${seconds / 3600} h $minutes min"
+            val minutes = ((seconds % 3600) / 60).toInt()
+            val hours = (seconds / 3600).toInt()
+            if (minutes == 0) res.getString(R.string.duration_h, hours) else res.getString(R.string.duration_h_min, hours, minutes)
         }
     }
 

@@ -1,6 +1,9 @@
 package com.ferhatsanli.comapp
 
-// Plain Kotlin with no Android dependency on purpose, so it can be unit-tested on the JVM.
+// Plain Kotlin apart from reading texts from Resources, so it can be unit-tested on the JVM
+// (Robolectric supplies the Resources).
+
+import android.content.res.Resources
 
 /** /system/update as the agent publishes it (see the agent's system_update.py). */
 internal data class SystemUpdateStatus(
@@ -29,14 +32,14 @@ internal data class SystemUpdateStatus(
     val logLines: List<String> get() = log.orEmpty().lines().filter { it.isNotBlank() }
 
     /**
-     * While running: "No new output for 12 min" once the update has been silent for
+     * While running: minutes without new output once the update has been silent for
      * [STALL_MINUTES] or more, so a stuck step is visible; null otherwise.
      */
-    fun stallHint(now: Long): String? {
+    fun stallMinutes(now: Long): Long? {
         if (!running) return null
         val since = outputAt ?: startedAt ?: return null
         val minutes = ((now - since) / 60_000L).coerceAtLeast(0)
-        return if (minutes >= STALL_MINUTES) "No new output for $minutes min" else null
+        return if (minutes >= STALL_MINUTES) minutes else null
     }
 
     /** 0..1 for the progress bar: the run's percentage while it goes, full when it worked. */
@@ -47,30 +50,43 @@ internal data class SystemUpdateStatus(
         }
 
     /** One line under the progress bar. */
-    fun describe(): String = when (state) {
+    fun describe(res: Resources): String = when (state) {
         "RUNNING" -> {
             val step = when (phase) {
-                "APP_STORE" -> "Updating App Store apps"
-                "REFRESHING" -> "Checking for updates"
-                "DOWNLOADING" -> if (total > 0) "Downloading $done of $total" else "Downloading"
-                "INSTALLING" -> if (total > 0) "Installing $done of $total" else "Installing"
-                "VERIFYING" -> "Verifying"
-                else -> "Finishing"
+                "APP_STORE" -> res.getString(R.string.upd_step_app_store)
+                "REFRESHING" -> res.getString(R.string.upd_step_checking)
+                "DOWNLOADING" -> if (total > 0) {
+                    res.getString(R.string.upd_step_downloading_n, done, total)
+                } else {
+                    res.getString(R.string.upd_step_downloading)
+                }
+                "INSTALLING" -> if (total > 0) {
+                    res.getString(R.string.upd_step_installing_n, done, total)
+                } else {
+                    res.getString(R.string.upd_step_installing)
+                }
+                "VERIFYING" -> res.getString(R.string.upd_step_verifying)
+                else -> res.getString(R.string.upd_step_finishing)
             }
-            "$step · $percent%"
+            res.getString(R.string.upd_running, step, percent)
         }
-        "DONE" -> when {
-            phase == "UP_TO_DATE" -> "Already up to date."
-            packages > 0 -> (if (macos) "Installed $packages update" else "Updated $packages package") +
-                "${if (packages == 1) "" else "s"}." +
-                if (rebootRecommended == true) " A restart is recommended." else ""
-            else -> "Update finished." + if (rebootRecommended == true) " A restart is recommended." else ""
+        "DONE" -> {
+            val restart = if (rebootRecommended == true) " " + res.getString(R.string.upd_restart_recommended) else ""
+            when {
+                phase == "UP_TO_DATE" -> res.getString(R.string.upd_up_to_date)
+                packages > 0 -> res.getQuantityString(
+                    if (macos) R.plurals.upd_mac_updates else R.plurals.upd_packages,
+                    packages,
+                    packages,
+                ) + restart
+                else -> res.getString(R.string.upd_finished) + restart
+            }
         }
         else -> when (error) {
-            "CANCELLED" -> "The update was cancelled. What finished before stays installed."
-            "INTERRUPTED" -> "The update stopped before it finished (the server computer restarted or it was killed)."
-            null -> "The update failed."
-            else -> "The update failed ($error)."
+            "CANCELLED" -> res.getString(R.string.upd_cancelled)
+            "INTERRUPTED" -> res.getString(R.string.upd_interrupted)
+            null -> res.getString(R.string.upd_failed)
+            else -> res.getString(R.string.upd_failed_code, error)
         }
     }
 

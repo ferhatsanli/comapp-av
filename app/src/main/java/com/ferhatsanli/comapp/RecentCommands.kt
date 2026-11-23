@@ -63,7 +63,7 @@ internal object RecentCommands {
                     else -> value.toString()
                 }
                 "volume" -> "${(value as? Number)?.toInt() ?: value}%"
-                "durationMinutes" -> (value as? Number)?.toInt()?.let { PingProtocol.formatDuration(it) } ?: value.toString()
+                "durationMinutes" -> (value as? Number)?.toInt()?.let(::englishDuration) ?: value.toString()
                 else -> value.toString()
             }
             if (text.isBlank()) null else label to text
@@ -77,5 +77,16 @@ internal object RecentCommands {
         "PROCESSING" -> "The agent is working on it"
         "PENDING" -> "Waiting for the agent"
         else -> command.status
+    }
+}
+
+/** Recent commands are a developer view and stay in English: 80 -> "1 h 20 min". */
+private fun englishDuration(totalMinutes: Int): String {
+    val hours = totalMinutes / 60
+    val minutes = totalMinutes % 60
+    return when {
+        hours > 0 && minutes > 0 -> "$hours h $minutes min"
+        hours > 0 -> "$hours h"
+        else -> "$minutes min"
     }
 }

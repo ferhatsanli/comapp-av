@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -97,20 +98,20 @@ internal fun SignInScreen(auth: FirebaseAuth) {
                             if (task.isSuccessful) {
                                 AppLog.info("Auth", "Signed in with Google")
                             } else {
-                                error = task.exception?.localizedMessage ?: "Sign-in failed. Check the connection and try again."
+                                error = task.exception?.localizedMessage ?: context.getString(R.string.signin_failed)
                                 AppLog.error("Auth", "Sign-in failed: $error")
                             }
                         }
                 } else {
                     isLoading = false
-                    error = "Google did not return an account. Please try again."
+                    error = context.getString(R.string.signin_no_account)
                     AppLog.error("Auth", "Unexpected credential type: ${credential.type}")
                 }
             } catch (cancelled: GetCredentialCancellationException) {
                 isLoading = false // the user closed the account picker: nothing to report
             } catch (failure: GetCredentialException) {
                 isLoading = false
-                error = failure.localizedMessage ?: "Could not open Google sign-in on this phone."
+                error = failure.localizedMessage ?: context.getString(R.string.signin_cannot_open)
                 AppLog.error("Auth", "Google sign-in could not start: ${failure.type}: $error")
             }
         }
@@ -128,12 +129,12 @@ internal fun SignInScreen(auth: FirebaseAuth) {
             GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Blue) {
                 Text("ComApp", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                 Text(
-                    "Control your own computers from your phone. Sign in to pair a computer and send it commands.",
+                    stringResource(R.string.signin_intro),
                     color = LocalGlassPalette.current.inkMuted,
                 )
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 GlassButton(
-                    text = "Continue with Google",
+                    text = stringResource(R.string.signin_google),
                     accent = GlassColors.Blue,
                     loading = isLoading,
                     enabled = !isLoading,
@@ -213,7 +214,7 @@ internal fun SignedInScreen(user: FirebaseUser, auth: FirebaseAuth, database: Fi
     val list = devices
     val device = list?.firstOrNull { it.id == selectedId } ?: list?.firstOrNull()
     when {
-        list == null -> CenteredMessage(listError ?: "Loading your computers…")
+        list == null -> CenteredMessage(listError ?: stringResource(R.string.computers_loading))
         device == null || addingDevice -> PairingScreen(
             user = user,
             database = database,
@@ -278,10 +279,11 @@ private fun PairingScreen(
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val palette = LocalGlassPalette.current
+    val context = LocalContext.current
 
     fun pair() {
         if (!Devices.isValidCode(code)) {
-            error = "The code has 8 letters and digits. Check it on the computer."
+            error = context.getString(R.string.pair_code_format)
             return
         }
         busy = true
@@ -292,7 +294,7 @@ private fun PairingScreen(
                 val agentUid = found?.key
                 if (found == null || agentUid == null) {
                     busy = false
-                    error = "No computer is showing this code right now. Check the code, or start pairing again on the computer."
+                    error = context.getString(R.string.pair_code_unknown)
                     return@addOnSuccessListener
                 }
                 val offer = PairingOffer(
@@ -309,13 +311,13 @@ private fun PairingScreen(
                     .addOnFailureListener { failure ->
                         busy = false
                         // The Rules refuse a code older than 10 minutes or an agent that already has an owner.
-                        error = "This code is no longer valid. Start pairing again on the computer to get a new one."
+                        error = context.getString(R.string.pair_code_expired)
                         AppLog.error("Devices", "Pairing was refused: ${failure.localizedMessage}")
                     }
             }
             .addOnFailureListener { failure ->
                 busy = false
-                error = failure.localizedMessage ?: "Could not check the code. Check the connection and try again."
+                error = failure.localizedMessage ?: context.getString(R.string.pair_code_check_failed)
                 AppLog.error("Devices", "Could not look the code up: $error")
             }
     }
@@ -330,11 +332,9 @@ private fun PairingScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
         ) {
             GlassCard(Modifier.fillMaxWidth(), accent = GlassColors.Blue) {
-                Text("Add a computer", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.pair_title), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Text(
-                    "1. Install the ComApp agent on the computer you want to control. The steps are at " +
-                        "github.com/ferhatsanli/comapp-agent.\n" +
-                        "2. The agent shows an 8-character code. Type it here within 10 minutes.",
+                    stringResource(R.string.pair_steps),
                     color = palette.inkMuted,
                 )
                 GlassTextField(
@@ -343,7 +343,7 @@ private fun PairingScreen(
                         code = Devices.normalizeCode(it)
                         error = null
                     },
-                    label = "Code from the computer",
+                    label = stringResource(R.string.pair_code_label),
                     singleLine = true,
                     enabled = !busy,
                     textStyle = MaterialTheme.typography.titleLarge.copy(
@@ -357,11 +357,11 @@ private fun PairingScreen(
                     ),
                     keyboardActions = KeyboardActions(onDone = { pair() }),
                     modifier = Modifier.fillMaxWidth(),
-                    clearDescription = "Clear the code",
+                    clearDescription = stringResource(R.string.pair_code_clear),
                 )
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 GlassButton(
-                    text = "Pair this computer",
+                    text = stringResource(R.string.pair_button),
                     accent = GlassColors.Blue,
                     loading = busy,
                     enabled = !busy && code.length == Devices.CODE_LENGTH,
@@ -369,8 +369,8 @@ private fun PairingScreen(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (canCancel) GlassChip("Back", onClick = onCancel)
-                GlassChip("Sign out", onClick = onSignOut)
+                if (canCancel) GlassChip(stringResource(R.string.common_back), onClick = onCancel)
+                GlassChip(stringResource(R.string.account_sign_out), onClick = onSignOut)
             }
             VersionLine()
         }
@@ -392,6 +392,7 @@ private fun DeviceMenu(
     onSignOut: () -> Unit,
 ) {
     val palette = LocalGlassPalette.current
+    val context = LocalContext.current
     var name by remember(current.id) { mutableStateOf(current.name) }
     var confirm by remember { mutableStateOf<MenuConfirm?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -403,7 +404,7 @@ private fun DeviceMenu(
         database.getReference("${Devices.devicesPath(user.uid)}/${current.id}/name").setValue(cleaned)
             .addOnSuccessListener { AppLog.info("Devices", "Renamed a computer") }
             .addOnFailureListener { failure ->
-                error = failure.localizedMessage ?: "Could not rename the computer."
+                error = failure.localizedMessage ?: context.getString(R.string.account_rename_failed)
                 AppLog.error("Devices", "Rename failed: $error")
             }
     }
@@ -418,7 +419,7 @@ private fun DeviceMenu(
             }
             .addOnFailureListener { failure ->
                 busy = false
-                error = failure.localizedMessage ?: "Could not remove the computer."
+                error = failure.localizedMessage ?: context.getString(R.string.account_remove_failed)
                 AppLog.error("Devices", "Remove failed: $error")
             }
     }
@@ -434,7 +435,7 @@ private fun DeviceMenu(
             .addOnSuccessListener { token ->
                 if (System.currentTimeMillis() / 1000 - token.authTimestamp > RECENT_SIGN_IN_SECONDS) {
                     busy = false
-                    error = "For your security, please sign out, sign in again and then choose Delete account right away."
+                    error = context.getString(R.string.account_delete_reauth)
                     return@addOnSuccessListener
                 }
                 database.reference.updateChildren(Devices.deleteAccountUpdate(user.uid, devices.map { it.id }))
@@ -446,50 +447,48 @@ private fun DeviceMenu(
                                 onSignOut()
                             } else {
                                 error = task.exception?.localizedMessage
-                                    ?: "Your data was deleted, but the account could not be removed. Please try again."
+                                    ?: context.getString(R.string.account_delete_partial)
                                 AppLog.error("Auth", "Account deletion failed: $error")
                             }
                         }
                     }
                     .addOnFailureListener { failure ->
                         busy = false
-                        error = failure.localizedMessage ?: "Your data could not be deleted. Please try again."
+                        error = failure.localizedMessage ?: context.getString(R.string.account_delete_data_failed)
                         AppLog.error("Auth", "Deleting the account's data failed: $error")
                     }
             }
             .addOnFailureListener { failure ->
                 busy = false
-                error = failure.localizedMessage ?: "Could not reach the server. Please try again."
+                error = failure.localizedMessage ?: context.getString(R.string.account_server_unreachable)
             }
     }
 
     when (confirm) {
         MenuConfirm.REMOVE -> ConfirmDialog(
-            title = "Remove ${current.name}?",
-            text = "The phone can no longer control this computer, and its reports are deleted. " +
-                "You can pair it again later with a new code.",
-            action = "Remove",
+            title = stringResource(R.string.account_remove_title, current.name),
+            text = stringResource(R.string.account_remove_text),
+            action = stringResource(R.string.account_remove),
             onConfirm = { confirm = null; remove() },
             onDismiss = { confirm = null },
         )
         MenuConfirm.SIGN_OUT -> ConfirmDialog(
-            title = "Sign out?",
-            text = "Your computers stay paired. Sign in again to control them.",
-            action = "Sign out",
+            title = stringResource(R.string.account_sign_out_title),
+            text = stringResource(R.string.account_sign_out_text),
+            action = stringResource(R.string.account_sign_out),
             onConfirm = { confirm = null; onSignOut() },
             onDismiss = { confirm = null },
         )
         MenuConfirm.DELETE_ACCOUNT -> ConfirmDialog(
-            title = "Delete your account?",
-            text = "This removes all your paired computers, their reports and your ComApp account. " +
-                "It cannot be undone. The agent stays installed on your computers until you uninstall it there.",
-            action = "Delete account",
+            title = stringResource(R.string.account_delete_title),
+            text = stringResource(R.string.account_delete_text),
+            action = stringResource(R.string.account_delete),
             onConfirm = { confirm = null; deleteAccount() },
             onDismiss = { confirm = null },
         )
         null -> AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text("Computers") },
+            title = { Text(stringResource(R.string.computers_title)) },
             text = {
                 Column(
                     Modifier.verticalScroll(rememberScrollState()),
@@ -518,21 +517,21 @@ private fun DeviceMenu(
                     GlassTextField(
                         value = name,
                         onValueChange = { name = it.take(Devices.MAX_NAME_LENGTH) },
-                        label = "Name of this computer",
+                        label = stringResource(R.string.computers_name_label),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { rename() }),
                         modifier = Modifier.fillMaxWidth(),
                     )
                     if (Devices.cleanName(name).let { it.isNotEmpty() && it != current.name }) {
-                        TextButton(onClick = { rename() }) { Text("Save name") }
+                        TextButton(onClick = { rename() }) { Text(stringResource(R.string.computers_save_name)) }
                     }
                     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    TextButton(onClick = onAdd, enabled = !busy) { Text("Add a computer") }
-                    TextButton(onClick = { confirm = MenuConfirm.REMOVE }, enabled = !busy) { Text("Remove this computer") }
-                    TextButton(onClick = { confirm = MenuConfirm.SIGN_OUT }, enabled = !busy) { Text("Sign out") }
+                    TextButton(onClick = onAdd, enabled = !busy) { Text(stringResource(R.string.pair_title)) }
+                    TextButton(onClick = { confirm = MenuConfirm.REMOVE }, enabled = !busy) { Text(stringResource(R.string.computers_remove_this)) }
+                    TextButton(onClick = { confirm = MenuConfirm.SIGN_OUT }, enabled = !busy) { Text(stringResource(R.string.account_sign_out)) }
                     TextButton(onClick = { confirm = MenuConfirm.DELETE_ACCOUNT }, enabled = !busy) {
-                        Text("Delete account", color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.account_delete), color = MaterialTheme.colorScheme.error)
                     }
                     Text(
                         user.email.orEmpty(),
@@ -541,7 +540,7 @@ private fun DeviceMenu(
                     )
                 }
             },
-            confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+            confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_close)) } },
         )
     }
 }
@@ -553,6 +552,6 @@ private fun ConfirmDialog(title: String, text: String, action: String, onConfirm
         title = { Text(title) },
         text = { Text(text) },
         confirmButton = { TextButton(onClick = onConfirm) { Text(action) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
     )
 }
