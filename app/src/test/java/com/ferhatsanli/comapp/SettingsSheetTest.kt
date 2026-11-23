@@ -10,6 +10,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -52,11 +53,11 @@ class SettingsSheetTest {
         assertEquals(3, rows)
         rule.onNodeWithText("12 favorites fit (4 per row).").assertExists()
 
-        rule.onNodeWithText("Nothing to import yet").assertIsNotEnabled()
-        rule.onNodeWithText("\"AA:BB:CC:DD:EE:FF\": \"Living Room TV\"").performTextInput(
+        rule.onNodeWithText("Nothing to import yet").performScrollTo().assertIsNotEnabled()
+        rule.onNodeWithText("\"AA:BB:CC:DD:EE:FF\": \"Living Room TV\"").performScrollTo().performTextInput(
             "\"48:D3:43:4A:1D:60\": \"JVD37-Modem\",\n\"B8:27:EB:75:27:A0\": \"RPi\",",
         )
-        rule.onNodeWithText("Import 2 names").assertIsEnabled().performClick()
+        rule.onNodeWithText("Import 2 names").performScrollTo().assertIsEnabled().performClick()
         assertEquals(mapOf("48-D3-43-4A-1D-60" to "JVD37-Modem", "B8-27-EB-75-27-A0" to "RPi"), imported)
         rule.onNodeWithText("Saved 2 names.").assertExists()
 
