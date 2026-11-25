@@ -284,6 +284,8 @@ STRINGS = [
     ("si_refreshing", "Refreshing…", "Yenileniyor…", "Wordt vernieuwd…"),
     ("si_tap_refresh", "Tap to refresh", "Yenilemek için dokun", "Tik om te vernieuwen"),
     ("si_power_mode", "Power mode: %1$s", "Güç modu: %1$s", "Energiemodus: %1$s"),
+    ("si_lan_ip", "IP address: %1$s", "IP adresi: %1$s", "IP-adres: %1$s"),
+    ("si_copy_ip", "Copy the IP address", "IP adresini kopyala", "IP-adres kopiëren"),
     ("si_cpu_usage", "CPU usage: %1$s%%", "CPU kullanımı: %%%1$s", "CPU-gebruik: %1$s%%"),
     ("si_cpu_temp", "CPU temperature: %1$s°C", "CPU sıcaklığı: %1$s°C", "CPU-temperatuur: %1$s°C"),
     ("si_package_power", "Package power: %1$s W", "Paket gücü: %1$s W", "Pakketvermogen: %1$s W"),

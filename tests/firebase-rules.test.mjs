@@ -654,6 +654,9 @@ try {
 
     await assertSucceeds(set(ref(piDb, `${DEV}/power/latest`), { reportedAt: Date.now(), tailscale: "RUNNING" }));
     await assertFails(set(ref(piDb, `${DEV}/power/latest`), { reportedAt: Date.now(), tailscale: "ON" }));
+    await assertSucceeds(set(ref(piDb, `${DEV}/power/latest`), { reportedAt: Date.now(), network: { lanIp: "192.168.1.23" } }));
+    await assertFails(set(ref(piDb, `${DEV}/power/latest`), { reportedAt: Date.now(), network: { lanIp: "not an ip" } }));
+    await assertFails(set(ref(piDb, `${DEV}/power/latest`), { reportedAt: Date.now(), network: { lanIp: "192.168.1.23", mac: "x" } }));
   });
 
   await check("Only the Pi writes /network/latest, and only Android reads it, with required shape", async () => {

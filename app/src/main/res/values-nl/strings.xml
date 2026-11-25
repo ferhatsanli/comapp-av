@@ -263,6 +263,8 @@
     <string name="si_refreshing">Wordt vernieuwd…</string>
     <string name="si_tap_refresh">Tik om te vernieuwen</string>
     <string name="si_power_mode">Energiemodus: %1$s</string>
+    <string name="si_lan_ip">IP-adres: %1$s</string>
+    <string name="si_copy_ip">IP-adres kopiëren</string>
     <string name="si_cpu_usage">CPU-gebruik: %1$s%%</string>
     <string name="si_cpu_temp">CPU-temperatuur: %1$s°C</string>
     <string name="si_package_power">Pakketvermogen: %1$s W</string>

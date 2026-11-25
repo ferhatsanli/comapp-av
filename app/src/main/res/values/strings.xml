@@ -266,6 +266,8 @@
     <string name="si_refreshing">Refreshing…</string>
     <string name="si_tap_refresh">Tap to refresh</string>
     <string name="si_power_mode">Power mode: %1$s</string>
+    <string name="si_lan_ip">IP address: %1$s</string>
+    <string name="si_copy_ip">Copy the IP address</string>
     <string name="si_cpu_usage">CPU usage: %1$s%%</string>
     <string name="si_cpu_temp">CPU temperature: %1$s°C</string>
     <string name="si_package_power">Package power: %1$s W</string>

@@ -4,7 +4,7 @@ A full-screen control deck for when the phone sits next to the computer: big Fav
 tiles and media controls, one tap each, with room for more panels later.
 Ticket: none yet (requested in chat, 2026-11-24).
 
-Status: **questions answered, waiting for approval.**
+Status: **approved 2026-11-25.** App version for this plan: 2.14.0 (2.13.0 went to the System Info IP).
 
 ## What exists today (research)
 
@@ -32,17 +32,17 @@ Files to touch: `DeckGrid.kt` (new), `DeckGridTest.kt` (new).
 #### Step 1.1: Grid model and packing (Size: S)
 - Acceptance criteria: the screen is 8×4 units in landscape and 4×8 in portrait; panels are
   placed in the saved order, each at the first free spot that fits (left to right, top to
-  bottom); a panel wider than the grid is narrowed to it; panels that don't fit go below and
-  the deck scrolls.
+  bottom); panels that don't fit go below and the deck scrolls.
 - Verification command: `./gradlew testDebugUnitTest --tests '*DeckGridTest*'` (CI)
 - Files likely touched: `DeckGrid.kt`
 - Test seams: `DeckGrid.pack(panels, columns)` → positions
 - Blocked by: none
 
 #### Step 1.2: Resize and reorder rules, saved (Size: S)
-- Acceptance criteria: each panel kind has a minimum and maximum size (Favorites 1×1 to 8×4,
-  Media 2×1 to 8×4); resizing snaps to whole units; order and sizes saved per computer in the
-  "deck" prefs and restored after an app restart.
+- Acceptance criteria: no panel is ever wider than 4 units, in either orientation, so one size
+  works in both; limits per kind: Favorites 1×1 to 4×4, Media 3×2 to 4×4; resizing snaps to
+  whole units; order and sizes saved per computer in the "deck" prefs and restored after an
+  app restart.
 - Verification command: `./gradlew testDebugUnitTest --tests '*DeckGridTest*'`
 - Files likely touched: `DeckGrid.kt`
 - Test seams: `DeckLayout.resize/move`, `encode/decode`
@@ -69,7 +69,7 @@ Files to touch: `DeckMode.kt` (new), `MainActivity.kt`, `tools/strings/deck.py` 
 
 #### Step 2.3: Media panel (Size: S)
 - Acceptance criteria: Previous, Play/Pause, Next and the volume slider (sent on finger lift);
-  at 2×1 only the three keys and the slider, larger sizes give larger buttons.
+  at 3×2 the three keys and the slider, larger sizes give larger buttons.
 - Test seams: `DeckScreen` click → `onMedia(kind, volume)`
 - Blocked by: 2.1
 
@@ -92,7 +92,7 @@ Files to touch: `DeckMode.kt` (new), `MainActivity.kt`, `tools/strings/deck.py` 
 | Where the deck lives | Full-screen overlay inside the main screen (like Settings) | Reuses the shared state and `sendCommand`; no second Activity |
 | Orientation | Follows the phone | User choice |
 | Grid | Whole screen = 8×4 units (portrait 4×8) | User choice |
-| Panel size | User resizes, in whole units | User choice |
+| Panel size | User resizes, in whole units; never wider than 4 units; Media at least 3×2 | User choice (Media minimum to be checked on the first try) |
 | Placement | User drags to reorder; panels flow into the first free spot | User choice; no gaps by construction |
 | Favorites | Same list as the Apps card; one tile per unit | User choice |
 | Now playing | Not in v1 | User choice; needs agent work |

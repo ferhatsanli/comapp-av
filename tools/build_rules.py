@@ -314,6 +314,11 @@ def data_rules():
                 "desktop": enum(("ON", "OFF")),
                 "tailscale": enum(("RUNNING", "STOPPED", "STARTING", "NEEDS_LOGIN", "DAEMON_OFF", "NOT_INSTALLED", "UNKNOWN")),
                 "caffeinate": leaf("newData.isBoolean()"),
+                # The computer's own address on the local network (System Info shows it).
+                "network": {
+                    "lanIp": leaf("newData.isString() && newData.val().matches(/^[0-9]{1,3}([.][0-9]{1,3}){3}$/)"),
+                    **NO_OTHER,
+                },
                 **NO_OTHER,
             }),
             "cycle": agent_report({

@@ -263,6 +263,8 @@
     <string name="si_refreshing">Yenileniyor…</string>
     <string name="si_tap_refresh">Yenilemek için dokun</string>
     <string name="si_power_mode">Güç modu: %1$s</string>
+    <string name="si_lan_ip">IP adresi: %1$s</string>
+    <string name="si_copy_ip">IP adresini kopyala</string>
     <string name="si_cpu_usage">CPU kullanımı: %%%1$s</string>
     <string name="si_cpu_temp">CPU sıcaklığı: %1$s°C</string>
     <string name="si_package_power">Paket gücü: %1$s W</string>

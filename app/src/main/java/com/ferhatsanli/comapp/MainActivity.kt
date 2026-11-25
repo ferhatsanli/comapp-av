@@ -346,6 +346,8 @@ private data class PowerSnapshot(
     val desktop: String?,
     /** A Mac kept awake by `caffeinate` (null where the agent doesn't report it). */
     val caffeinate: Boolean? = null,
+    /** The computer's IPv4 address on its local network (null when it has none or an older agent). */
+    val lanIp: String? = null,
 )
 
 /** One /power/history sample: CPU usage (%) and package power (W), either may be missing. */
@@ -915,6 +917,7 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     tailscale = snapshot.child("tailscale").getValue(String::class.java),
                     caffeinate = snapshot.child("caffeinate").getValue(Boolean::class.java),
                     desktop = snapshot.child("desktop").getValue(String::class.java),
+                    lanIp = snapshot.child("network/lanIp").getValue(String::class.java),
                 )
             }
 
@@ -3196,6 +3199,17 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                             else -> stringResource(R.string.common_unknown)
                         }
                         Text(stringResource(R.string.si_power_mode, label), fontWeight = FontWeight.Medium)
+                    }
+                    power.lanIp?.let { ip ->
+                        // Its own tap target: copies the address instead of refreshing the card.
+                        val clipboard = LocalClipboardManager.current
+                        Text(
+                            stringResource(R.string.si_lan_ip, ip),
+                            modifier = Modifier.clickable(onClickLabel = stringResource(R.string.si_copy_ip)) {
+                                clipboard.setText(AnnotatedString(ip))
+                                Toast.makeText(context, res.getString(R.string.common_copied, ip), Toast.LENGTH_SHORT).show()
+                            },
+                        )
                     }
                     power.usagePercent?.let { Text(stringResource(R.string.si_cpu_usage, "%.1f".format(it))) }
                     power.tempC?.let { Text(stringResource(R.string.si_cpu_temp, it.toString())) }
