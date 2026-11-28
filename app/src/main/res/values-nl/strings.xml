@@ -234,6 +234,16 @@
     <string name="upd_button">Bijwerken</string>
     <string name="upd_none">Er is nog geen update vanuit de app uitgevoerd.</string>
     <string name="upd_stall">Al %1$d min geen nieuwe uitvoer. Hij wacht misschien op iets op de Mac (bijvoorbeeld de App Store-aanmelding); de uitvoer hieronder toont wat hij het laatst deed.</string>
+    <string name="upd_app_button">Serverapp bijwerken</string>
+    <string name="upd_app_title">De serverapp bijwerken?</string>
+    <string name="upd_app_text">De computer haalt de nieuwste ComApp-agent van GitHub en herstart hem met de nieuwe code. Hij is een paar seconden offline.</string>
+    <string name="upd_app_updating">Bijwerken: de serverapp herstart over een paar seconden.</string>
+    <string name="upd_app_done">Serverapp bijgewerkt naar v%1$s.</string>
+    <string name="upd_app_current">De serverapp is al up-to-date (v%1$s).</string>
+    <string name="upd_app_needs_install">Deze update verandert ook de installatie. Voer op de computer uit: comapp-server update</string>
+    <string name="upd_app_failed">De computer kon de update niet van GitHub halen (geen verbinding, lokale wijzigingen, of git vraagt om een wachtwoord). Voer op de computer uit: comapp-server update</string>
+    <string name="upd_app_not_permitted">Deze knop heeft een nieuwere installatie op de computer nodig: voer het installatiescript nog één keer uit (install-linux.sh of install-macos.sh).</string>
+    <string name="upd_app_error">De update is niet gelukt; de serverapp draait gewoon door zoals eerst.</string>
     <string name="upd_last_output">Laatste uitvoer %1$s</string>
     <string name="upd_step_app_store">App Store-apps bijwerken</string>
     <string name="upd_step_checking">Zoeken naar updates</string>

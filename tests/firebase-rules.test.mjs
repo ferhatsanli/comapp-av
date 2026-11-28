@@ -837,6 +837,31 @@ try {
     }));
   });
 
+  await check("Update server app: AGENT_UPDATE, its two results and its errors", async () => {
+    const cmd = (over) => ({ action: "AGENT_UPDATE", status: "PENDING", ...over });
+    const claim = async (id) => {
+      await assertSucceeds(set(command(androidDb, id), cmd()));
+      await assertSucceeds(update(command(piDb, id), { status: "PROCESSING", processingAt: Date.now() }));
+    };
+    await assertFails(set(command(androidDb, "agent-upd-text"), cmd({ text: "x" })));
+    await claim("agent-upd-1");
+    await assertFails(update(command(piDb, "agent-upd-1"), { status: "SUCCESS", result: "UPDATE_STARTED", processingAt: null }));
+    await assertSucceeds(update(command(piDb, "agent-upd-1"), { status: "SUCCESS", result: "AGENT_UPDATING", processingAt: null }));
+    await claim("agent-upd-2");
+    await assertSucceeds(update(command(piDb, "agent-upd-2"), { status: "SUCCESS", result: "AGENT_UP_TO_DATE", processingAt: null }));
+    for (const [id, code, allowed] of [["agent-upd-3", "NEEDS_INSTALL", true], ["agent-upd-4", "UPDATE_FAILED", true],
+        ["agent-upd-5", "NOT_PERMITTED", true], ["agent-upd-6", "UPDATE_RUNNING", false]]) {
+      await claim(id);
+      const write = update(command(piDb, id), { status: "FAILED", errorCode: code, processingAt: null });
+      await (allowed ? assertSucceeds(write) : assertFails(write));
+    }
+    // Another action can't borrow these results or errors.
+    await assertSucceeds(set(command(androidDb, "ping-borrow"), { action: "PING", status: "PENDING" }));
+    await assertSucceeds(update(command(piDb, "ping-borrow"), { status: "PROCESSING", processingAt: Date.now() }));
+    await assertFails(update(command(piDb, "ping-borrow"), { status: "SUCCESS", result: "AGENT_UP_TO_DATE", processingAt: null }));
+    await assertFails(update(command(piDb, "ping-borrow"), { status: "FAILED", errorCode: "NEEDS_INSTALL", processingAt: null }));
+  });
+
   await check("Update cancel: SYSTEM_UPDATE_CANCEL, its result and errors; the report carries log, outputAt, CANCELLED", async () => {
     const cmd = (action, over) => ({ action, status: "PENDING", ...over });
     await assertSucceeds(set(command(androidDb, "upd-cancel"), cmd("SYSTEM_UPDATE_CANCEL")));

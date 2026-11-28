@@ -237,6 +237,16 @@
     <string name="upd_button">Update</string>
     <string name="upd_none">No update has run from the app yet.</string>
     <string name="upd_stall">No new output for %1$d min. It may be waiting for something on the Mac (for example the App Store sign-in); the output below shows the last thing it did.</string>
+    <string name="upd_app_button">Update server app</string>
+    <string name="upd_app_title">Update the server app?</string>
+    <string name="upd_app_text">The computer gets the newest ComApp agent from GitHub and restarts it with the new code. It is offline for a few seconds.</string>
+    <string name="upd_app_updating">Updating: the server app restarts in a few seconds.</string>
+    <string name="upd_app_done">Server app updated to v%1$s.</string>
+    <string name="upd_app_current">The server app is already up to date (v%1$s).</string>
+    <string name="upd_app_needs_install">This update also changes the setup. On the computer, run: comapp-server update</string>
+    <string name="upd_app_failed">The computer couldn\'t get the update from GitHub (no connection, local changes, or git asks for a password). On the computer, run: comapp-server update</string>
+    <string name="upd_app_not_permitted">This button needs a newer setup on the computer: run its installer once more (install-linux.sh or install-macos.sh).</string>
+    <string name="upd_app_error">The update didn\'t work; the server app keeps running as before.</string>
     <string name="upd_last_output">Last output %1$s</string>
     <string name="upd_step_app_store">Updating App Store apps</string>
     <string name="upd_step_checking">Checking for updates</string>

@@ -24,7 +24,7 @@ from pathlib import Path
 OUT = Path(__file__).resolve().parent.parent / "database.rules.json"
 
 ACTIONS = {
-    # action: result when it succeeds
+    # action: result when it succeeds (or a tuple of results when it can succeed in more than one way)
     "PING": "PONG",
     "SPEAK": "SPOKEN",
     "SLEEP": "SLEEPING",
@@ -41,7 +41,16 @@ ACTIONS = {
     "OPEN_APP": "APP_OPENED",
     "LIST_APPS": "APPS_LISTED",
     "SYSTEM_UPDATE_CANCEL": "UPDATE_CANCELLED",
+    # Update server app: the new code is in place and the agent restarts, or nothing was new.
+    "AGENT_UPDATE": ("AGENT_UPDATING", "AGENT_UP_TO_DATE"),
 }
+
+
+def action_results():
+    """(action, result) for every result an action may succeed with."""
+    for action, results in ACTIONS.items():
+        for result in (results if isinstance(results, tuple) else (results,)):
+            yield action, result
 # Fields the phone sets and the agent must leave alone.
 IMMUTABLE = ("action", "app", "text", "createdAt", "durationMinutes", "mode", "language", "state", "source", "url",
              "media", "volume")
@@ -91,7 +100,8 @@ NO_OTHER = {"$other": {".validate": False}}
 def command_rules():
     a = "newData.child('action').val()"
     d = "data.child('action').val()"
-    results = " || ".join("(%s === '%s' && newData.child('result').val() === '%s')" % ("%s", k, v) for k, v in ACTIONS.items())
+    pairs = list(action_results())
+    results = " || ".join("(%s === '%s' && newData.child('result').val() === '%s')" % ("%s", k, v) for k, v in pairs)
     timed = "(%s === 'SLEEP' || %s === 'SHUTDOWN' || %s === 'RESTART')" % (a, a, a)
     uploaded = ("root.child('users').child($uid).child('data').child($deviceId)"
                 ".child('uploads').child($commandId).child('torrent').exists()")
@@ -108,7 +118,7 @@ def command_rules():
         " || (%s === 'PROCESSING' && data.child('processingAt').val() < now - 120000 && %s === 'PROCESSING')"
         " || (%s === 'PROCESSING' && %s === 'SUCCESS' && (%s))"
         " || (%s === 'PROCESSING' && %s === 'FAILED' && newData.child('errorCode').exists()))"
-        % (s_old, s_new, s_old, s_new, s_old, s_new, results % ((d,) * len(ACTIONS)), s_old, s_new)
+        % (s_old, s_new, s_old, s_new, s_old, s_new, results % ((d,) * len(pairs)), s_old, s_new)
     )
     # The phone may clear its own history; the agent prunes what is finished.
     remove = ("!newData.exists() && data.exists() && (" + USER_DEV + " || (" + AGENT +
@@ -140,7 +150,7 @@ def command_rules():
         " && !newData.child('result').exists() && !newData.child('errorCode').exists())"
         " || (%s === 'SUCCESS' && !newData.child('processingAt').exists() && (%s) && !newData.child('errorCode').exists())"
         " || (%s === 'FAILED' && !newData.child('processingAt').exists() && newData.child('errorCode').exists()"
-        " && !newData.child('result').exists()))" % (s_new, s_new, s_new, results % ((a,) * len(ACTIONS)), s_new)
+        " && !newData.child('result').exists()))" % (s_new, s_new, s_new, results % ((a,) * len(pairs)), s_new)
     )
     pa = "newData.parent().child('action').val()"
     error = (
@@ -148,11 +158,12 @@ def command_rules():
         " || (%s && %s === 'DOWNLOAD_ADD')"
         " || (newData.val() === 'BAD_INPUT' && newData.parent().child('action').val() === 'OPEN_APP')"
         " || (newData.val() === 'NOT_PERMITTED' && (%s === 'TAILSCALE' || %s === 'SYSTEM_UPDATE' || %s === 'MEDIA'"
-        " || %s === 'SLEEP' || %s === 'SYSTEM_UPDATE_CANCEL'))"
+        " || %s === 'SLEEP' || %s === 'SYSTEM_UPDATE_CANCEL' || %s === 'AGENT_UPDATE'))"
         " || (newData.val() === 'UPDATE_RUNNING' && (%s === 'SYSTEM_UPDATE' || %s === 'SLEEP' || %s === 'SHUTDOWN'"
         " || %s === 'RESTART'))"
-        " || (newData.val() === 'SLEEP_CYCLE_ACTIVE' && %s === 'SLEEP'))"
-        % (any_of("newData.val()", ("NOT_A_FILE", "NO_SPACE", "BAD_INPUT", "ENGINE_DOWN")), pa, pa, pa, pa, pa, pa, pa, pa, pa, pa, pa)
+        " || (newData.val() === 'SLEEP_CYCLE_ACTIVE' && %s === 'SLEEP')"
+        " || ((newData.val() === 'NEEDS_INSTALL' || newData.val() === 'UPDATE_FAILED') && %s === 'AGENT_UPDATE'))"
+        % (any_of("newData.val()", ("NOT_A_FILE", "NO_SPACE", "BAD_INPUT", "ENGINE_DOWN")), pa, pa, pa, pa, pa, pa, pa, pa, pa, pa, pa, pa, pa)
     )
     return {
         # The user reads everything under /users/{uid} anyway (it is all theirs); the agent
@@ -171,7 +182,7 @@ def command_rules():
             "text": text(1, 300),
             "status": enum(("PENDING", "PROCESSING", "SUCCESS", "FAILED")),
             "processingAt": number("newData.val() >= now - 30000"),
-            "result": enum(ACTIONS.values()),
+            "result": enum(sorted({result for _, result in action_results()})),
             "errorCode": leaf(error),
             "source": enum(("MAGNET", "URL", "TORRENT_FILE")),
             "media": enum(("PREVIOUS", "PLAY_PAUSE", "NEXT", "VOLUME")),

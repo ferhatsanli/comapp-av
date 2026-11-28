@@ -4,7 +4,7 @@ A full-screen control deck for when the phone sits next to the computer: big Fav
 tiles and media controls, one tap each, with room for more panels later.
 Ticket: none yet (requested in chat, 2026-11-24).
 
-Status: **approved 2026-11-25.** App version for this plan: 2.14.0 (2.13.0 went to the System Info IP).
+Status: **approved 2026-11-25.** App version for this plan: 2.15.0 (2.13.0 went to the System Info IP, 2.14.0 to Update server app).
 
 ## What exists today (research)
 

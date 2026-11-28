@@ -18,6 +18,7 @@ internal object PingProtocol {
     const val TAILSCALE_ACTION = "TAILSCALE"
     const val SYSTEM_UPDATE_ACTION = "SYSTEM_UPDATE"
     const val SYSTEM_UPDATE_CANCEL_ACTION = "SYSTEM_UPDATE_CANCEL"
+    const val AGENT_UPDATE_ACTION = "AGENT_UPDATE"
     const val MEDIA_ACTION = "MEDIA"
     const val MEDIA_PREVIOUS = "PREVIOUS"
     const val MEDIA_PLAY_PAUSE = "PLAY_PAUSE"
@@ -106,6 +107,12 @@ internal object PingProtocol {
     )
 
     /** Stops a running system update on the server computer (macOS: the whole update job). */
+    /** Update server app: the agent gets its own new code and restarts with it. */
+    fun agentUpdateCommand(): Map<String, String> = mapOf(
+        "action" to AGENT_UPDATE_ACTION,
+        "status" to "PENDING",
+    )
+
     fun systemUpdateCancelCommand(): Map<String, String> = mapOf(
         "action" to SYSTEM_UPDATE_CANCEL_ACTION,
         "status" to "PENDING",

@@ -471,6 +471,11 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
     var shutdownRequested by remember { mutableStateOf(false) }
     var restartRequested by remember { mutableStateOf(false) }
     var cancelUpdateRequested by remember { mutableStateOf(false) }
+    var agentUpdateRequested by remember { mutableStateOf(false) }
+    // Update server app: how the last one ended (a result or an error code), and the version
+    // it started from, so the card can say when the new version has come up.
+    var agentUpdateOutcome by remember { mutableStateOf<String?>(null) }
+    var agentUpdateFrom by remember { mutableStateOf<String?>(null) }
     var updateLogOpen by rememberSaveable { mutableStateOf(false) }
     // Caffeinate: what the switch was just set to, until the agent reports the real state.
     var caffeinateWanted by remember { mutableStateOf<Boolean?>(null) }
@@ -818,6 +823,13 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     commandStatus = newStatus
                     errorCode = newErrorCode
                     error = null
+                    if (commandAction == PingProtocol.AGENT_UPDATE_ACTION) {
+                        when (newStatus) {
+                            "SUCCESS" -> agentUpdateOutcome = snapshot.child("result").getValue(String::class.java)
+                            "FAILED" -> agentUpdateOutcome = newErrorCode ?: "AGENT_ERROR"
+                            else -> Unit
+                        }
+                    }
                 }
 
                 override fun onCancelled(databaseError: DatabaseError) {
@@ -1414,6 +1426,27 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
             },
             dismissButton = {
                 TextButton(onClick = { restartRequested = false }) { Text(stringResource(R.string.common_cancel)) }
+            },
+        )
+    }
+
+    if (agentUpdateRequested) {
+        AlertDialog(
+            onDismissRequest = { agentUpdateRequested = false },
+            title = { Text(stringResource(R.string.upd_app_title)) },
+            text = { Text(stringResource(R.string.upd_app_text)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    agentUpdateRequested = false
+                    activeButton = "agentUpdate"
+                    agentUpdateOutcome = null
+                    agentUpdateFrom = device.agentVersion
+                    AppLog.info("Update", "Server app update requested (now ${device.agentVersion ?: "?"})")
+                    sendCommand(PingProtocol.AGENT_UPDATE_ACTION, PingProtocol.agentUpdateCommand())
+                }) { Text(stringResource(R.string.upd_button)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { agentUpdateRequested = false }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
@@ -2774,6 +2807,38 @@ internal fun PingScreen(user: FirebaseUser, device: Device, database: FirebaseDa
                     working = activeButton == "restart" && commandPending,
                     onClick = { restartRequested = true },
                 )
+            }
+            if (device.supports("agentUpdate")) {
+                // Update server app: the agent's own code, from the checkout it was installed from.
+                GlassButton(
+                    text = stringResource(R.string.upd_app_button),
+                    accent = GlassColors.Indigo,
+                    prominent = false,
+                    enabled = canSend && !serverAsleep,
+                    loading = sending && activeButton == "agentUpdate",
+                    working = activeButton == "agentUpdate" && commandPending,
+                    onClick = { agentUpdateRequested = true },
+                )
+                val note = when (agentUpdateOutcome) {
+                    null -> null
+                    "AGENT_UPDATING" -> if (agentUpdateFrom != null && device.agentVersion != null && device.agentVersion != agentUpdateFrom) {
+                        stringResource(R.string.upd_app_done, device.agentVersion.orEmpty())
+                    } else {
+                        stringResource(R.string.upd_app_updating)
+                    }
+                    "AGENT_UP_TO_DATE" -> stringResource(R.string.upd_app_current, device.agentVersion ?: "?")
+                    "NEEDS_INSTALL" -> stringResource(R.string.upd_app_needs_install)
+                    "UPDATE_FAILED" -> stringResource(R.string.upd_app_failed)
+                    "NOT_PERMITTED" -> stringResource(R.string.upd_app_not_permitted)
+                    else -> stringResource(R.string.upd_app_error)
+                }
+                note?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (agentUpdateOutcome in setOf("AGENT_UPDATING", "AGENT_UP_TO_DATE")) palette.inkMuted else GlassColors.Amber,
+                    )
+                }
             }
         }
     }

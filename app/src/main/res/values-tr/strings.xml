@@ -234,6 +234,16 @@
     <string name="upd_button">Güncelle</string>
     <string name="upd_none">Uygulamadan henüz güncelleme çalıştırılmadı.</string>
     <string name="upd_stall">%1$d dakikadır yeni çıktı yok. Mac\'te bir şey bekliyor olabilir (örneğin App Store girişi); aşağıdaki çıktı yaptığı son şeyi gösterir.</string>
+    <string name="upd_app_button">Sunucu uygulamasını güncelle</string>
+    <string name="upd_app_title">Sunucu uygulaması güncellensin mi?</string>
+    <string name="upd_app_text">Bilgisayar en yeni ComApp agent\'ı GitHub\'dan alır ve yeni kodla yeniden başlatır. Birkaç saniye bağlantısız kalır.</string>
+    <string name="upd_app_updating">Güncelleniyor: sunucu uygulaması birkaç saniye içinde yeniden başlar.</string>
+    <string name="upd_app_done">Sunucu uygulaması v%1$s sürümüne güncellendi.</string>
+    <string name="upd_app_current">Sunucu uygulaması zaten güncel (v%1$s).</string>
+    <string name="upd_app_needs_install">Bu güncelleme kurulumu da değiştiriyor. Bilgisayarda şunu çalıştır: comapp-server update</string>
+    <string name="upd_app_failed">Bilgisayar güncellemeyi GitHub\'dan alamadı (bağlantı yok, yerel değişiklikler var ya da git şifre istiyor). Bilgisayarda şunu çalıştır: comapp-server update</string>
+    <string name="upd_app_not_permitted">Bu buton bilgisayarda daha yeni bir kurulum istiyor: kurulum script\'ini bir kez daha çalıştır (install-linux.sh veya install-macos.sh).</string>
+    <string name="upd_app_error">Güncelleme olmadı; sunucu uygulaması eskisi gibi çalışmaya devam ediyor.</string>
     <string name="upd_last_output">Son çıktı %1$s</string>
     <string name="upd_step_app_store">App Store uygulamaları güncelleniyor</string>
     <string name="upd_step_checking">Güncellemeler denetleniyor</string>

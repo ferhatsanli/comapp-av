@@ -59,6 +59,10 @@ class PingProtocolTest {
             mapOf("action" to "SYSTEM_UPDATE_CANCEL", "status" to "PENDING"),
             PingProtocol.systemUpdateCancelCommand(),
         )
+        assertEquals(
+            mapOf("action" to "AGENT_UPDATE", "status" to "PENDING"),
+            PingProtocol.agentUpdateCommand(),
+        )
         assert(
             PingProtocol.describeError(res, "NOT_PERMITTED", PingProtocol.SYSTEM_UPDATE_CANCEL_ACTION)!!
                 .contains("install-macos-admin.sh on it again"),
